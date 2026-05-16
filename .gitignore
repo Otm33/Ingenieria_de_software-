@@ -8,3 +8,7 @@ db.sqlite3
 # Media/Static
 backend/media/
 backend/static/ 
+
+.venv/
+venv/
+ENV/
