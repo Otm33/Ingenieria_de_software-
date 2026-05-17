@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: tutrueque_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: 12345
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app  
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db 
+
+  frontend:
+    build: ./frontend
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules 
+    ports:
+      - "5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
+volumes:
+  postgres_data:
