@@ -33,12 +33,19 @@ http://localhost:8000/api/comunidad/miembros/importar/
 docker-compose exec backend bash
 
 #Ver todos los registros
+
+
 python manage.py shell -c "from comunidad.models import MiembroComunidad; print(MiembroComunidad.objects.all())"
 
 #Contar cuántos miembros hay guardados
+
+
 python manage.py shell -c "from comunidad.models import MiembroComunidad; print(MiembroComunidad.objects.count())"
 
 #Buscar un miembro específico por correo
+
+
+
 python manage.py shell -c "from comunidad.models import MiembroComunidad; print(MiembroComunidad.objects.filter(correo="juan.perez@example.com"))"
 
 
