@@ -1,35 +1,25 @@
-@import './base.css';
-
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  font-weight: normal;
+/* src/assets/main.css */
+:root {
+  --bg-principal: #121214;       /* Fondo oscuro profundo */
+  --bg-tarjeta: #1e1e24;         /* Fondo de los contenedores/tarjetas */
+  --texto-principal: #e1e1e6;    /* Texto claro */
+  --texto-secundario: #a8a8b3;   /* Texto gris para descripciones */
+  --color-borde: #29292e;        /* Bordes sutiles oscuros */
+  --color-primario: #4ade80;     /* Verde brillante para éxitos y acciones */
+  --color-primario-hover: #22c55e;
+  --color-error: #f87171;        /* Rojo suave para errores */
+  --color-exxito-bg: #14532d;    /* Fondo verde oscuro para alertas de éxito */
+  --color-error-bg: #7f1d1d;     /* Fondo rojo oscuro para alertas de error */
 }
 
-a,
-.green {
-  text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
-}
-
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
-}
-
-@media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
-
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
+body {
+  background-color: var(--bg-principal);
+  color: var(--texto-principal);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
 }

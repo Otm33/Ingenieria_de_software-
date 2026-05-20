@@ -15,25 +15,34 @@ import ImportarMiembros from './components/ImportarMiembros.vue'
 </template>
 
 <style>
-/* Estilos básicos para que se vea ordenado */
-body {
-  font-family: Arial, sans-serif;
-  background-color: #f4f6f9;
-  margin: 0;
-  padding: 0;
-}
 .contenedor-principal {
-  max-width: 800px;
-  margin: 40px auto;
-  padding: 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  width: 100%;
+  max-width: 600px;
+  margin: 20px;
+  padding: 30px;
+  background-color: var(--bg-tarjeta);
+  border: 1px solid var(--color-borde);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
-header h1 {
-  color: #2c3e50;
+
+header {
   text-align: center;
-  border-bottom: 2px solid #ecf0f1;
+  margin-bottom: 30px;
+  border-bottom: 1px solid var(--color-borde);
   padding-bottom: 20px;
 }
+
+header h1 {
+  color: var(--color-primario);
+  margin: 0 0 8px 0;
+  font-size: 1.8rem;
+}
+
+.subtitulo {
+  color: var(--texto-secundario);
+  margin: 0;
+  font-size: 0.95rem;
+}
 </style>
+
