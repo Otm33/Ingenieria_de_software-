@@ -1,0 +1,60 @@
+@startuml Diagrama_Secuencia_HU1
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+actor "Administrador" as Admin
+box "Frontend (Vue.js)" #LightBlue
+    participant "CargarCSV.vue" as Vue
+end box
+box "Backend (Django REST Framework)" #LightYellow
+    participant "CargarUsuariosCSVView" as View
+    participant "UsuarioAutorizado (Model)" as Model
+end box
+database "PostgreSQL" as DB
+
+Admin -> Vue: Selecciona archivo y presiona "Subir Lista (.csv)"
+activate Vue
+
+Vue -> Vue: manejarArchivo(event)
+note over Vue: Asigna el archivo seleccionado\na la variable reactiva 'archivo'
+
+Vue -> Vue: enviarCSV()
+activate Vue #DarkCyan
+
+alt No se ha seleccionado archivo (!archivo.value)
+    Vue --> Admin: Actualiza feedback.value
+else Archivo seleccionado
+    Vue -> Vue: Crear FormData() y append('archivo_csv', archivo.value)
+    
+    Vue -> View: HTTP POST /api/cargar-csv/ (FormData)
+    activate View
+    
+    View -> View: request.FILES.get('archivo_csv')
+    
+    alt Archivo ausente en el Request
+        View --> Vue: "error": "No se recibió ningún archivo"
+        Vue -> Vue: feedback.value = error.response.data.error
+    else Archivo recibido con éxito
+        loop Por cada fila decodificada en csv.reader()
+            View -> Model: get_or_create(email=email)
+            activate Model
+            Model -> DB: SELECT / INSERT
+            activate DB
+            DB --> Model: Confirmación de fila
+            deactivate DB
+            Model --> View: Instancia del objeto
+            deactivate Model
+        end
+        View --> Vue: "mensaje": "Lista procesada con éxito"
+        activate Vue #LightGreen
+        Vue -> Vue: feedback.value = response.data.mensaje\nlimpiar archivo.value
+        deactivate Vue
+    end
+    deactivate View
+    Vue --> Admin: Despliega mensaje en pantalla
+end
+deactivate Vue
+deactivate Vue
+@enduml

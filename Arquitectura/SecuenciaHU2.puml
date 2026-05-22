@@ -1,0 +1,63 @@
+@startuml Diagrama_Secuencia_HU2
+
+autonumber
+
+actor "Usuario" as User
+box "Pantalla del Navegador" #LightBlue
+    participant "Registro.vue" as Vue
+end box
+box "Servidor (Django)" #LightYellow
+    participant "RegistroUsuarioView" as View
+    participant "Lista Blanca (ModelAuth)" as ModelAuth
+    participant "Tabla de Usuarios (ModelUser)" as ModelUser
+end box
+database "Base de Datos (PostgreSQL)" as DB
+
+User -> Vue: Escribe sus datos y da Click en Registrarse
+activate Vue
+
+Vue -> Vue: ejecutarRegistro()
+Vue -> View: Envía los datos por internet (HTTP POST)
+activate View
+
+View -> ModelAuth: ¿Este correo está pre-autorizado?
+activate ModelAuth
+ModelAuth -> DB: Busca el correo
+activate DB
+DB --> ModelAuth: Correo encontrado / No encontrado
+deactivate DB
+ModelAuth --> View: Responde: "SÍ está" o "NO está"
+deactivate ModelAuth
+
+alt Si el servidor responde: "NO está en la lista"
+    View --> Vue: Error (Acceso Denegado)
+else Si responde: "SÍ está autorizado", pasamos a la siguiente pregunta
+    View -> ModelUser: ¿Este nombre de usuario ya está ocupado?
+    activate ModelUser
+    ModelUser -> DB: Busca el nombre de usuario
+    activate DB
+    DB --> ModelUser: Encontrado / No encontrado
+    deactivate DB
+    ModelUser --> View: Responde: "SÍ está ocupado" o "NO está ocupado"
+    deactivate ModelUser
+    
+    alt Si responde: "SÍ está ocupado"
+        View --> Vue: Error (Nombre de usuario ya existe)
+    else Si responde: "NO está ocupado" (Está libre)
+        View -> ModelUser: ¡Crea el nuevo usuario!
+        activate ModelUser
+        ModelUser -> DB: Guarda los datos en la tabla (INSERT)
+        activate DB
+        DB --> ModelUser: Confirmado y Guardado
+        deactivate DB
+        ModelUser --> View: Usuario creado con éxito
+        deactivate ModelUser
+        
+        View --> Vue: HTTP (Cuenta Creada)
+        Vue -> Vue: Redirigir a la pantalla de Login
+        Vue --> User: Cambia la pantalla para que inicie sesión
+    end
+end
+deactivate View
+deactivate Vue
+@enduml

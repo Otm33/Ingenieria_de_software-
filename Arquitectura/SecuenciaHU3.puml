@@ -1,0 +1,66 @@
+@startuml Diagrama_Secuencia_HU3
+
+autonumber
+
+actor "Usuario" as User
+box "Frontend (Vue.js)" #LightBlue
+    participant "Cartelera.vue" as Vue
+end box
+box "Backend (Django REST)" #LightYellow
+    participant "CarteleraFeedView" as View
+    participant "PublicacionSerializer" as Ser
+    participant "Publicacion" as Model
+end box
+database "PostgreSQL" as DB
+
+User -> Vue: Abre ruta "/" (Cartelera)
+activate Vue
+
+Vue -> Vue: onMounted() -> obtenerPublicaciones(false)
+Vue -> View: HTTP GET /api/cartelera/
+activate View
+
+View -> Model: filter(esta_activa=True)
+activate Model
+Model -> DB: SELECT publicaciones activas
+DB --> Model: lista
+deactivate Model
+
+View -> View: annotate(prioridad_urgencia, prioridad_estrellas)\norder_by(-prioridad_estrellas, -prioridad_urgencia, -id)
+View -> Ser: serializar queryset
+Ser --> View: JSON publicaciones
+View --> Vue: 200 [ {id, titulo, categoria, urgencia, ...} ]
+deactivate View
+
+Vue -> Vue: publicaciones = response.data\nrenderiza tarjetas (clasePorUrgencia)
+Vue --> User: Muestra cartelera completa
+
+== Aplicar filtros ==
+User -> Vue: Selecciona categoría/urgencia y "Aplicar Filtros"
+Vue -> Vue: aplicarFiltros()
+
+alt Solo urgencia sin categoría (restricción ERS en frontend)
+    Vue --> User: errorFiltro = "Debe seleccionar una Categoría..."
+else Filtros válidos
+    Vue -> View: GET /api/cartelera/?categoria=X&urgencia=Y
+    activate View
+    View -> Model: filter(esta_activa, categoria, urgencia) + ordenamiento
+    Model -> DB: SELECT filtrado
+    DB --> Model: resultados
+    View --> Vue: JSON (puede ser [])
+    deactivate View
+
+    alt publicaciones.length == 0
+        Vue --> User: "No hay servicios de esta categoría en este momento."
+    else Hay resultados
+        Vue --> User: Lista filtrada con badges CRÍTICO/ALTA
+    end
+end
+
+== Restablecer ==
+User -> Vue: Click "Restablecer"
+Vue -> Vue: limpia filtros -> obtenerPublicaciones(false)
+Vue -> View: GET /api/cartelera/ (sin params)
+View --> Vue: cartelera inicial
+deactivate Vue
+@enduml
