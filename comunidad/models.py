@@ -3,6 +3,8 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
+from django.db import models
+from decimal import Decimal
 
 class UsuarioAutorizado(models.Model):
     """HU1: Lista blanca de correos autorizados por el Administrador via CSV."""
@@ -19,6 +21,7 @@ class Usuario(AbstractUser):
     horas_de_vida = models.FloatField(default=0.0)
     promedio_estrellas = models.FloatField(default=5.0)
     es_comercio = models.BooleanField(default=False) # HU5: Identificador de comercio
+    saldo_comercial = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
     class Meta:
         constraints = [
@@ -65,18 +68,19 @@ class Publicacion(models.Model):
         super().save(*args, **kwargs)
 
 class AcuerdoTrueque(models.Model):
-    """HU4: Motor de transacciones de tiempo."""
-    ESTADO_CHOICES = [
-        ('PROPUESTO', 'Propuesto'),
+    ESTADOS = (
+        ('PENDIENTE', 'Pendiente'),
         ('ACEPTADO', 'Aceptado'),
         ('RECHAZADO', 'Rechazado'),
-        ('FINALIZADO', 'Finalizado')
-    ]
-    emisor = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='trueques_enviados')
-    receptor = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='trueques_recibidos')
-    publicacion_solicitada = models.ForeignKey(Publicacion, on_delete=models.CASCADE)
-    estado = models.CharField(max_length=15, choices=ESTADO_CHOICES, default='PROPUESTO')
-    creado_el = models.DateTimeField(auto_now_add=True)
+        ('FINALIZADO', 'Finalizado'),
+    )
+    emisor = models.ForeignKey(Usuario, related_name='trueques_enviados', on_delete=models.CASCADE)
+    receptor = models.ForeignKey(Usuario, related_name='trueques_recibidos', on_delete=models.CASCADE)
+    estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
+    
+    # NUEVO: Para la confirmación de ambas partes antes de transferir el saldo
+    emisor_confirmado = models.BooleanField(default=False)
+    receptor_confirmado = models.BooleanField(default=False)
 
 class Resena(models.Model):
     """HU4: Calificaciones e historial de confianza post-trueque."""
@@ -87,9 +91,12 @@ class Resena(models.Model):
     comentario = models.TextField(max_length=500) # Restricción estricta de 500 caracteres
 
 class SaldoComercial(models.Model):
-    """HU5: Registro contable independiente para el vuelto comercial (Vigencia 12 años)."""
-    comercio = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='vueltos_emitidos')
-    cliente = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='vueltos_recibidos')
+    TIPO_MOVIMIENTO = [
+        ('EMISION', 'Emisión de vuelto'),
+        ('PAGO', 'Pago en comercio'),
+    ]
+    comercio = models.ForeignKey(Usuario, related_name='operaciones_comerciales', on_delete=models.CASCADE)
+    cliente = models.ForeignKey(Usuario, related_name='movimientos_saldo', on_delete=models.CASCADE)
     monto_excedente = models.DecimalField(max_digits=10, decimal_places=2)
-    fecha_emision = models.DateTimeField(auto_now_add=True)
-    esta_consumido = models.BooleanField(default=False)
+    tipo_movimiento = models.CharField(max_length=10, choices=TIPO_MOVIMIENTO, default='EMISION')
+    fecha = models.DateTimeField(auto_now_add=True)

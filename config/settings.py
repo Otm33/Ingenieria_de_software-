@@ -52,6 +52,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# ... Todo lo de arriba (BASE_DIR, SECRET_KEY, DEBUG, ALLOWED_HOSTS) queda igual ...
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
@@ -78,52 +80,33 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'tutrueque',
+        'NAME': 'Tu_Trueque',  # Ojo: cambiado para que coincida con pgAdmin
         'USER': 'postgres',
-        'PASSWORD': 'admin123',  # La contraseña que acabas de asignar
+        'PASSWORD': 'admin123',  # Pon aquí la contraseña real que elegiste en la instalación
         'HOST': '127.0.0.1',
         'PORT': '5432',
     }
 }
 
 # Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    { 'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator' },
+    { 'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator' },
+    { 'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator' },
+    { 'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator' },
 ]
 
-
 # Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
-
 STATIC_URL = 'static/'
 
 
-# Configuraciones principales del proyecto Django
+# === CONFIGURACIONES PRINCIPALES DEL PROYECTO (MANTENER ESTAS) ===
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -134,11 +117,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
-    'comunidad', # Aplicación principal del Sprint 1
+    'comunidad', # Tu app del Sprint 1
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware', # Habilitar comunicación con Vue
+    'corsheaders.middleware.CorsMiddleware', # Para hablar con Vue
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -151,13 +134,12 @@ MIDDLEWARE = [
 # Configuración del modelo de Usuario Personalizado
 AUTH_USER_MODEL = 'comunidad.Usuario'
 
-# Django utiliza PBKDF2 por defecto, pero se configura para usar BCrypt si está instalado (Requisito 2.5.1)
 PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True # Ajustar en producción para apuntar solo al puerto de Vue
+CORS_ALLOW_ALL_ORIGINS = True 
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
