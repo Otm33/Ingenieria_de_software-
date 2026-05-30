@@ -1,0 +1,143 @@
+@startuml DiagramaClasesBancoTiempo
+
+skinparam classAttributeIconSize 0
+skinparam classFontStyle bold
+skinparam packageStyle rectangle
+
+' ===========================
+' CAPA DE PERSISTENCIA (MODELOS)
+' ===========================
+package "Persistencia (Modelos)" #LightBlue {
+
+    class UsuarioAutorizado {
+        - email : EmailField <<unique>>
+        - cargado_el : DateTimeField
+        --
+        + __str__()
+    }
+
+    class Usuario {
+        - username : CharField
+        - email : EmailField <<unique>>
+        - nombre_real : CharField
+        - horas_de_vida : FloatField
+        - promedio_estrellas : FloatField
+        - es_comercio : BooleanField
+        - saldo_comercial : DecimalField
+        - password : CharField
+        - is_active : BooleanField
+        --
+        + __str__()
+        <<constraint: horas_de_vida >= -10>>
+    }
+
+    class Publicacion {
+        - tipo : CharField {TALENTO, NECESIDAD}
+        - titulo : CharField
+        - descripcion : TextField
+        - categoria : CharField <<indexed>>
+        - urgencia : CharField {NORMAL, ALTA, CRITICA}
+        - esta_activa : BooleanField
+        --
+        + save()
+        <<max 5 talentos activos>>
+        <<max 3 necesidades activas>>
+    }
+
+    class AcuerdoTrueque {
+        - estado : CharField {PENDIENTE, ACEPTADO, RECHAZADO, FINALIZADO}
+        - emisor_confirmado : BooleanField
+        - receptor_confirmado : BooleanField
+    }
+
+    class Resena {
+        - estrellas : IntegerField {1..5}
+        - comentario : TextField <<max 500>>
+    }
+
+    class SaldoComercial {
+        - monto_excedente : DecimalField
+        - tipo_movimiento : CharField {EMISION, PAGO}
+        - fecha : DateTimeField
+    }
+}
+
+' Relaciones de persistencia
+Usuario "1" --o "0..*" Publicacion : publica >
+Usuario "1" --o "0..*" AcuerdoTrueque : emisor >
+Usuario "1" --o "0..*" AcuerdoTrueque : receptor >
+AcuerdoTrueque "1" --|| "1" Resena : tiene >
+Usuario "1" --o "0..*" Resena : calificador >
+Usuario "1" --o "0..*" Resena : calificado >
+Usuario "1" --o "0..*" SaldoComercial : comercio >
+Usuario "1" --o "0..*" SaldoComercial : cliente >
+UsuarioAutorizado ..> Usuario : valida registro
+
+' CAPA DE CONTROLADORES (VIEWS)
+package "Controladores (Views)" #LightYellow {
+
+    class CargarUsuariosCSVView {
+        + post(request) : Response
+    }
+
+    class RegistroUsuarioView {
+        + post(request) : Response
+    }
+
+    class CarteleraFeedView {
+        + get_queryset() : QuerySet
+    }
+
+    class MatchmakingView {
+        + get(request) : Response
+    }
+
+    class CrearPropuestaView {
+        + post(request) : Response
+    }
+
+    class ResponderPropuestaView {
+        + post(request, trueque_id) : Response
+    }
+
+    class FinalizarTruequeView {
+        + post(request, trueque_id) : Response
+    }
+
+    class RegistrarResenaView {
+        + post(request) : Response
+    }
+
+    class CatalogoComerciosView {
+        + get_queryset() : QuerySet
+    }
+
+    class EmitirVueltoComercialView {
+        + post(request) : Response
+    }
+
+    class PagarConSaldoView {
+        + post(request) : Response
+    }
+}
+
+' Dependencias Controlador -> Modelo
+CargarUsuariosCSVView ..> UsuarioAutorizado : crea
+RegistroUsuarioView ..> UsuarioAutorizado : valida
+RegistroUsuarioView ..> Usuario : crea
+CarteleraFeedView ..> Publicacion : consulta/ordena
+MatchmakingView ..> Publicacion : busca coincidencias
+MatchmakingView ..> Usuario : retorna matches
+CrearPropuestaView ..> AcuerdoTrueque : crea
+ResponderPropuestaView ..> AcuerdoTrueque : actualiza estado
+FinalizarTruequeView ..> AcuerdoTrueque : confirma/finaliza
+FinalizarTruequeView ..> Usuario : transfiere horas
+RegistrarResenaView ..> Resena : crea
+RegistrarResenaView ..> Usuario : recalcula reputación
+CatalogoComerciosView ..> Usuario : filtra comercios
+EmitirVueltoComercialView ..> SaldoComercial : registra
+EmitirVueltoComercialView ..> Usuario : actualiza saldo
+PagarConSaldoView ..> SaldoComercial : registra pago
+PagarConSaldoView ..> Usuario : descuenta saldo
+
+@enduml

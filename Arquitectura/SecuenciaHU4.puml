@@ -1,0 +1,98 @@
+@startuml Diagrama_Secuencia_HU4
+
+autonumber
+
+actor "Usuario A" as UserA
+actor "Usuario B" as UserB
+box "Cliente HTTP (futuro Vue / Postman)" #LightBlue
+    participant "Cliente API" as Client
+end box
+box "Backend (Django REST)" #LightYellow
+    participant "MatchmakingView" as MatchV
+    participant "CrearPropuestaView" as CrearV
+    participant "ResponderPropuestaView" as RespV
+    participant "FinalizarTruequeView" as FinV
+    participant "RegistrarResenaView" as ResV
+    participant "Publicacion / AcuerdoTrueque / Resena" as Models
+end box
+database "PostgreSQL" as DB
+
+note over Client: permission_classes = IsAuthenticated\n(Token JWT / sesión)
+
+== Escenario 1: Match automático ==
+UserA -> Client: GET /api/matchmaking/
+Client -> MatchV: get(request)
+activate MatchV
+MatchV -> Models: NECESIDAD y TALENTO activos de usuario_actual
+MatchV -> Models: Usuario.objects.filter(publicaciones complementarias)\n.exclude(id=usuario_actual)
+Models -> DB: SELECT con JOINs
+DB --> MatchV: matches[]
+MatchV --> Client: {"matches": [...], "mensaje": "coincidencias"}
+Client --> UserA: Notificación / lista de matches
+deactivate MatchV
+
+== Escenario 2: Enviar propuesta ==
+UserA -> Client: POST /api/trueques/propuestas/crear/ {receptor_id}
+Client -> CrearV: post(request)
+activate CrearV
+CrearV -> Models: Usuario.get(id=receptor_id)
+CrearV -> Models: AcuerdoTrueque.create(emisor, receptor, estado=PENDIENTE)
+Models -> DB: INSERT acuerdo
+CrearV --> Client: 201 {propuesta_id}
+Client --> UserB: (notificación externa / polling)
+deactivate CrearV
+
+== Escenario 3: Aceptar o rechazar ==
+UserB -> Client: POST /api/trueques/{id}/responder/ {accion}
+Client -> RespV: post(request, trueque_id)
+activate RespV
+RespV -> Models: get(id, receptor=request.user)
+
+alt accion == ACEPTAR
+    RespV -> Models: estado = ACEPTADO
+    Models -> DB: UPDATE
+    RespV --> Client: "Propuesta aceptada"
+else accion == RECHAZAR
+    RespV -> Models: estado = RECHAZADO
+    RespV --> Client: "Propuesta rechazada"
+end
+deactivate RespV
+
+== Escenario 4: Confirmación bilateral y saldo ==
+UserA -> Client: POST /api/trueques/{id}/finalizar/
+Client -> FinV: post (usuario A)
+activate FinV
+FinV -> Models: select_for_update().get(trueque)
+FinV -> Models: emisor_confirmado = True (o receptor_confirmado)
+Models -> DB: UPDATE flags
+
+alt Solo una parte confirmó
+    FinV --> Client: "A la espera de la otra parte"
+else Ambas partes confirmaron
+    FinV -> FinV: validar horas_de_vida emisor >= -9
+    alt Balance excede límite -10
+        FinV --> Client: 400 error límite balance
+    else OK
+        FinV -> Models: emisor.horas -= 1; receptor.horas += 1\nestado = FINALIZADO
+        Models -> DB: UPDATE usuarios + acuerdo
+        FinV --> Client: "Saldos actualizados. Modal reseña habilitado"
+    end
+end
+deactivate FinV
+
+UserB -> Client: POST /api/trueques/{id}/finalizar/
+note right: Misma lógica; segunda confirmación dispara transferencia
+
+== Escenario 5: Reseña y promedio ==
+UserA -> Client: POST /api/resenas/ {trueque_id, estrellas, comentario}
+Client -> ResV: post(request)
+activate ResV
+ResV -> Models: AcuerdoTrueque.get(id)
+ResV -> Models: Resena.create(calificador, calificado, estrellas)
+Models -> DB: INSERT reseña
+ResV -> Models: recalcular promedio_estrellas del calificado
+Models -> DB: UPDATE Usuario.promedio_estrellas
+ResV --> Client: "Reseña registrada y promedio actualizado"
+deactivate ResV
+
+@enduml
