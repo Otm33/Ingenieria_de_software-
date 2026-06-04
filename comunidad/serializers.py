@@ -24,3 +24,15 @@ class ResenaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resena
         fields = ['id', 'trueque', 'calificador', 'calificado', 'estrellas', 'comentario']
+
+class SaldoComercialSerializer(serializers.ModelSerializer):
+    comercio_nombre = serializers.CharField(source='comercio.nombre_real', read_only=True)
+    comercio_email = serializers.EmailField(source='comercio.email', read_only=True)
+    cliente_nombre = serializers.CharField(source='cliente.nombre_real', read_only=True)
+    cliente_email = serializers.EmailField(source='cliente.email', read_only=True)
+
+    class Meta:
+        model = SaldoComercial
+        fields = ['id', 'comercio', 'comercio_nombre', 'comercio_email', 
+                  'cliente', 'cliente_nombre', 'cliente_email', 
+                  'monto_excedente', 'tipo_movimiento', 'fecha']

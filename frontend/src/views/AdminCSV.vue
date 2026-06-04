@@ -5,7 +5,7 @@
         <p class="eyebrow">Administracion</p>
         <h2 class="page-title">Carga de usuarios autorizados</h2>
         <p class="page-description">
-          Sube un archivo CSV con los correos permitidos para que puedan registrarse en TuTrueque.
+          Sube un archivo CSV con correos separados para usuarios y comercios autorizados.
         </p>
       </div>
     </div>
@@ -50,9 +50,14 @@
             </thead>
             <tbody>
               <tr>
-                <td>email</td>
-                <td>Correo autorizado para registro</td>
+                <td>email Usuarios</td>
+                <td>Correo autorizado para registro de usuarios</td>
                 <td>persona@correo.com</td>
+              </tr>
+              <tr>
+                <td>email Comercios</td>
+                <td>Correo autorizado para registro de comercios</td>
+                <td>negocio@correo.com</td>
               </tr>
             </tbody>
           </table>

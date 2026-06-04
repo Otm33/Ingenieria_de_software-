@@ -21,7 +21,7 @@ class CarteleraInterface(ABC):
 
 class TruequeInterface(ABC):
     @abstractmethod
-    def crear_propuesta(self, emisor, receptor_id):
+    def crear_propuesta(self, emisor, receptor_id, publicacion_emisor_id=None, publicacion_receptor_id=None):
         pass
 
     @abstractmethod
@@ -56,4 +56,12 @@ class ComercioInterface(ABC):
 class MatchmakingInterface(ABC):
     @abstractmethod
     def obtener_matches(self, usuario):
+        pass
+    
+    @abstractmethod
+    def obtener_matches_por_publicacion(self, usuario, publicacion_id):
+        pass
+    
+    @abstractmethod
+    def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
         pass

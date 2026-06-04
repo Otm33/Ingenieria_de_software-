@@ -85,6 +85,49 @@ export default class UserService {
     return this._publicaciones
   }
 
+  async crearPublicacion(formulario) {
+    const data = await this._request('publicaciones/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formulario),
+    })
+
+    const publicacion = new Publicacion(data)
+    this._publicaciones.unshift(publicacion)
+    return publicacion
+  }
+
+  async obtenerMiPerfil() {
+    const data = await this._request('mi-perfil/')
+    return data
+  }
+
+  async obtenerMisPublicaciones() {
+    const data = await this._request('mis-publicaciones/')
+    return data.publicaciones || []
+  }
+
+  async verificarCoincidenciaPorTitulo(publicacionId) {
+    const params = new URLSearchParams()
+    params.set('publicacion_id', publicacionId)
+    params.set('accion', 'verificar_coincidencia')
+
+    const endpoint = `matchmaking/?${params.toString()}`
+    const data = await this._request(endpoint)
+    return data
+  }
+
+  async obtenerMatches(publicacionId = null) {
+    const params = new URLSearchParams()
+    if (publicacionId) {
+      params.set('publicacion_id', publicacionId)
+    }
+
+    const endpoint = params.toString() ? `matchmaking/?${params.toString()}` : 'matchmaking/'
+    const data = await this._request(endpoint)
+    return data.matches || []
+  }
+
   get users() {
     return this._usuarios
   }

@@ -34,6 +34,7 @@ export default class User {
       email: formulario.email?.trim(),
       username: formulario.username?.trim(),
       password: formulario.password,
+      es_comercio: Boolean(formulario.es_comercio),
     }
   }
 }

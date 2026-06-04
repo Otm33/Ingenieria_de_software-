@@ -1,20 +1,29 @@
 from rest_framework import generics, status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate, login, logout
+from django.core.exceptions import ValidationError
 
-from .serializers import PublicacionSerializer, UsuarioSerializer
+from .serializers import PublicacionSerializer, UsuarioSerializer, ResenaSerializer
 from .services import (
     BusinessError,
     CarteleraService,
     CargaUsuariosService,
     ComercioService,
     MatchmakingService,
+    NotificacionService,
+    PublicacionService,
     RegistroUsuarioService,
     ResenaService,
     TruequeService,
 )
+
+
+class CsrfExemptSessionAuthentication(SessionAuthentication):
+    def enforce_csrf(self, request):
+        return
 
 
 def manejar_error(error):
@@ -23,6 +32,7 @@ def manejar_error(error):
 
 class CargarUsuariosCSVView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -74,6 +84,7 @@ class SesionActualView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request):
         # CAMBIO AUTH: autentica contra la BD Django y crea sesion para el frontend.
@@ -93,6 +104,7 @@ class LoginView(APIView):
 
 class LogoutView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request):
         # CAMBIO AUTH: cierra la sesion para volver a la pantalla de inicio.
@@ -112,6 +124,25 @@ class CarteleraFeedView(generics.ListAPIView):
             categoria=self.request.query_params.get("categoria"),
             urgencia=self.request.query_params.get("urgencia"),
         )
+
+
+class CrearPublicacionView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or PublicacionService()
+
+    def post(self, request):
+        try:
+            publicacion = self.servicio.crear_publicacion(request.user, request.data)
+            return Response(PublicacionSerializer(publicacion).data, status=status.HTTP_201_CREATED)
+        except BusinessError as error:
+            return manejar_error(error)
+        except ValidationError as error:
+            mensaje = "; ".join(error.messages) if hasattr(error, "messages") else str(error)
+            return Response({"error": mensaje}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class FinalizarTruequeView(APIView):
@@ -167,10 +198,27 @@ class MatchmakingView(APIView):
         self.servicio = servicio or MatchmakingService()
 
     def get(self, request):
-        matches = self.servicio.obtener_matches(request.user)
+        # Verificar si se proporciona un ID de publicación específica
+        publicacion_id = request.query_params.get("publicacion_id")
+        accion = request.query_params.get("accion")
+        
+        if accion == "verificar_coincidencia" and publicacion_id:
+            # Verificar si el usuario tiene publicaciones con el mismo título
+            resultado = self.servicio.verificar_coincidencia_por_titulo(request.user, publicacion_id)
+            return Response(resultado, status=status.HTTP_200_OK)
+        
+        if publicacion_id:
+            # Buscar matches basados en la publicación específica
+            matches = self.servicio.obtener_matches_por_publicacion(request.user, publicacion_id)
+            mensaje = f"Se encontraron coincidencias para la publicación seleccionada."
+        else:
+            # Buscar matches basados en todas las publicaciones del usuario (comportamiento original)
+            matches = self.servicio.obtener_matches(request.user)
+            mensaje = "Se encontraron coincidencias (Match)."
+        
         serializer = UsuarioSerializer(matches, many=True)
         return Response(
-            {"matches": serializer.data, "mensaje": "Se encontraron coincidencias (Match)."},
+            {"matches": serializer.data, "mensaje": mensaje},
             status=status.HTTP_200_OK,
         )
 
@@ -184,7 +232,12 @@ class CrearPropuestaView(APIView):
 
     def post(self, request):
         try:
-            propuesta = self.servicio.crear_propuesta(request.user, request.data.get("receptor_id"))
+            propuesta = self.servicio.crear_propuesta(
+                request.user, 
+                request.data.get("receptor_id"),
+                request.data.get("publicacion_emisor_id"),
+                request.data.get("publicacion_receptor_id")
+            )
             return Response(
                 {"message": "Propuesta enviada con exito.", "propuesta_id": propuesta.id},
                 status=status.HTTP_201_CREATED,
@@ -237,3 +290,208 @@ class PagarConSaldoView(APIView):
             return Response({"message": mensaje})
         except BusinessError as error:
             return manejar_error(error)
+
+
+class VerPerfilUsuarioView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, usuario_id):
+        try:
+            from .repositories import UsuarioRepository
+            usuario_repository = UsuarioRepository()
+            usuario = usuario_repository.obtener_por_id(usuario_id)
+            
+            serializer = UsuarioSerializer(usuario)
+            
+            # Obtener publicaciones del usuario
+            from .repositories import PublicacionRepository
+            publicacion_repository = PublicacionRepository()
+            publicaciones = Publicacion.objects.filter(usuario=usuario, esta_activa=True)
+            publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
+            
+            # Obtener reseñas del usuario
+            from .repositories import ResenaRepository
+            resena_repository = ResenaRepository()
+            resenas_recibidas = resena_repository.listar_por_calificado(usuario)
+            resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
+            
+            return Response({
+                "usuario": serializer.data,
+                "publicaciones": publicaciones_data,
+                "resenas": resenas_data,
+                "cantidad_publicaciones": len(publicaciones_data),
+                "cantidad_resenas": len(resenas_data)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as error:
+            return Response(
+                {"error": f"Error al obtener perfil: {str(error)}"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+
+class VerSaldoComercialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            from .repositories import SaldoComercialRepository
+            saldo_repository = SaldoComercialRepository()
+            
+            # Obtener saldo actual del usuario
+            saldo_actual = request.user.saldo_comercial
+            
+            # Obtener movimientos del usuario como cliente
+            movimientos_cliente = SaldoComercial.objects.filter(
+                cliente=request.user
+            ).order_by('-fecha')
+            
+            # Obtener movimientos del usuario como comercio (si es comercio)
+            movimientos_comercio = []
+            if request.user.es_comercio:
+                movimientos_comercio = SaldoComercial.objects.filter(
+                    comercio=request.user
+                ).order_by('-fecha')
+            
+            serializer_cliente = SaldoComercialSerializer(movimientos_cliente, many=True)
+            serializer_comercio = SaldoComercialSerializer(movimientos_comercio, many=True)
+            
+            return Response({
+                "saldo_actual": float(saldo_actual),
+                "movimientos_como_cliente": serializer_cliente.data,
+                "movimientos_como_comercio": serializer_comercio.data,
+                "es_comercio": request.user.es_comercio
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as error:
+            return Response(
+                {"error": f"Error al obtener saldo comercial: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class VerMiPerfilView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            from .repositories import UsuarioRepository, PublicacionRepository, ResenaRepository
+            from .models import Publicacion
+            usuario_repository = UsuarioRepository()
+            publicacion_repository = PublicacionRepository()
+            resena_repository = ResenaRepository()
+            
+            serializer = UsuarioSerializer(request.user)
+            
+            # Obtener publicaciones del usuario
+            publicaciones = Publicacion.objects.filter(usuario=request.user, esta_activa=True)
+            publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
+            
+            # Obtener reseñas recibidas
+            resenas_recibidas = resena_repository.listar_por_calificado(request.user)
+            resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
+            
+            # Obtener trueques del usuario
+            from .models import AcuerdoTrueque
+            trueques_enviados = AcuerdoTrueque.objects.filter(emisor=request.user)
+            trueques_recibidos = AcuerdoTrueque.objects.filter(receptor=request.user)
+            
+            return Response({
+                "usuario": serializer.data,
+                "publicaciones": publicaciones_data,
+                "resenas_recibidas": resenas_data,
+                "trueques_enviados_count": trueques_enviados.count(),
+                "trueques_recibidos_count": trueques_recibidos.count(),
+                "saldo_comercial": float(request.user.saldo_comercial)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as error:
+            return Response(
+                {"error": f"Error al obtener mi perfil: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class MisPublicacionesView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            from .models import Publicacion
+            # Obtener solo las publicaciones del usuario actual
+            print(f"Usuario actual: {request.user.username}, ID: {request.user.id}")
+            publicaciones = Publicacion.objects.filter(usuario=request.user, esta_activa=True)
+            print(f"Publicaciones encontradas: {publicaciones.count()}")
+            publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
+            
+            return Response({
+                "publicaciones": publicaciones_data,
+                "cantidad": len(publicaciones_data)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as error:
+            print(f"Error en MisPublicacionesView: {str(error)}")
+            return Response(
+                {"error": f"Error al obtener mis publicaciones: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class NotificacionesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or NotificacionService()
+
+    def get(self, request):
+        """Obtiene las notificaciones no leídas del usuario."""
+        try:
+            notificaciones = self.servicio.obtener_notificaciones_usuario(request.user)
+            
+            # Serializar las notificaciones
+            notificaciones_data = []
+            for notif in notificaciones:
+                notificaciones_data.append({
+                    "id": notif.id,
+                    "mensaje": notif.mensaje,
+                    "remitente_nombre": notif.remitente.nombre_real,
+                    "remitente_username": notif.remitente.username,
+                    "estado": notif.estado,
+                    "creada_el": notif.creada_el.isoformat() if notif.creada_el else None,
+                    "trueque_id": notif.trueque.id,
+                    "publicacion_titulo": notif.publicacion_original.titulo,
+                    "publicacion_tipo": notif.publicacion_original.tipo,
+                    "prioridad": notif.prioridad
+                })
+            
+            return Response({
+                "notificaciones": notificaciones_data,
+                "cantidad": len(notificaciones_data)
+            }, status=status.HTTP_200_OK)
+        except Exception as error:
+            return Response(
+                {"error": f"Error al obtener notificaciones: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
+    def post(self, request):
+        """Marca una notificación como leída."""
+        notificacion_id = request.data.get("notificacion_id")
+        if not notificacion_id:
+            return Response(
+                {"error": "Falta notificacion_id"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        try:
+            self.servicio.marcar_notificacion_leida(notificacion_id)
+            return Response(
+                {"message": "Notificación marcada como leída"},
+                status=status.HTTP_200_OK,
+            )
+        except Exception as error:
+            return Response(
+                {"error": f"Error al marcar notificación: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

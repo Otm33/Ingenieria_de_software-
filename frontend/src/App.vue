@@ -2,24 +2,26 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="topbar__inner">
-        <a class="brand" href="/" aria-label="Ir al inicio">
-          <img class="brand__logo" src="/tutrueque-logo.png" alt="TuTrueque" />
-          <div>
-            <h1 class="brand__title">TuTrueque</h1>
-            <p class="brand__subtitle">Intercambio comunitario de servicios</p>
-          </div>
-        </a>
+        <nav class="nav nav--main" aria-label="Navegacion principal">
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'cartelera'" title="Cartelera">
+            
+            <span>Cartelera</span>
+          </button>
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'publicar'" title="Publicar">
+            
+            <span>Publicar</span>
+          </button>
+        </nav>
 
-        <nav v-if="usuarioActual?.esAdmin" class="nav" aria-label="Navegacion administrativa">
-          <!-- CAMBIO VISTA: estas opciones solo se renderizan para staff o superusuario. -->
-          <button class="nav__link" type="button" @click="seccionActiva = 'cartelera'">Cartelera</button>
-          <button class="nav__link" type="button" @click="seccionActiva = 'registro'">Registro</button>
+        <nav v-if="usuarioActual?.esStaff || usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
           <button class="nav__link" type="button" @click="seccionActiva = 'csv'">Usuarios CSV</button>
-          <a class="nav__link" href="http://127.0.0.1:8000/admin/">Admin Django</a>
+          <a class="nav__link" href="http://127.0.0.1:8000/admin/" target="_blank">Admin Django</a>
         </nav>
 
         <div v-if="usuarioActual" class="session-box">
-          <span>{{ usuarioActual.nombreReal || usuarioActual.username }}</span>
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'perfil'" title="Mi Perfil">
+            <span>Perfil</span>
+          </button>
           <button class="button button--secondary" type="button" @click="cerrarSesion">Salir</button>
         </div>
       </div>
@@ -55,17 +57,32 @@
             </div>
 
             <p v-if="loginError" class="alert alert--error">{{ loginError }}</p>
+
+            <div class="auth-links">
+              <button class="link-button" type="button" @click="mostrarRegistroUsuario">
+                No tengo cuenta
+              </button>
+              <button class="link-button" type="button" @click="mostrarRegistroComercio">
+                ¿Usted es un comercio?
+              </button>
+            </div>
           </form>
         </section>
 
-        <!-- CAMBIO VISTA: si no hay sesion, el registro aparece debajo del login en la misma pagina. -->
-        <Register @registered="iniciarSesionDespuesDeRegistro" />
+        <Register
+          v-if="tipoRegistroActivo"
+          :key="tipoRegistroActivo"
+          :es-comercio="tipoRegistroActivo === 'comercio'"
+          @registered="iniciarSesionDespuesDeRegistro"
+        />
       </section>
 
       <template v-else>
         <Cartelera v-if="seccionActiva === 'cartelera'" />
-        <Register v-else-if="usuarioActual.esAdmin && seccionActiva === 'registro'" />
-        <AdminCSV v-else-if="usuarioActual.esAdmin && seccionActiva === 'csv'" />
+        <Cartelera v-else-if="seccionActiva === 'publicar'" :modo-publicar="true" @volver-cartelera="seccionActiva = 'cartelera'" />
+        <Perfil v-else-if="seccionActiva === 'perfil'" />
+        <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
+        <AdminCSV v-else-if="usuarioActual.esStaff && seccionActiva === 'csv'" />
         <Cartelera v-else />
       </template>
     </main>
@@ -77,6 +94,7 @@ import { inject, onMounted, reactive, ref } from 'vue'
 import AdminCSV from './views/AdminCSV.vue'
 import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
+import Perfil from './views/Perfil.vue'
 
 const userController = inject('userController')
 const usuarioActual = ref(null)
@@ -84,6 +102,7 @@ const cargandoSesion = ref(true)
 const procesandoLogin = ref(false)
 const loginError = ref('')
 const seccionActiva = ref('cartelera')
+const tipoRegistroActivo = ref('')
 const loginForm = reactive({ username: '', password: '' })
 
 const cargarSesion = async () => {
@@ -103,6 +122,7 @@ const iniciarSesion = async () => {
     // CAMBIO AUTH: despues de iniciar sesion se muestra la cartelera normal.
     usuarioActual.value = await userController.iniciarSesion(loginForm)
     seccionActiva.value = 'cartelera'
+    tipoRegistroActivo.value = ''
     loginForm.username = ''
     loginForm.password = ''
   } catch (error) {
@@ -116,6 +136,14 @@ const iniciarSesionDespuesDeRegistro = async (credenciales) => {
   loginForm.username = credenciales.username
   loginForm.password = credenciales.password
   await iniciarSesion()
+}
+
+const mostrarRegistroUsuario = () => {
+  tipoRegistroActivo.value = tipoRegistroActivo.value === 'usuario' ? '' : 'usuario'
+}
+
+const mostrarRegistroComercio = () => {
+  tipoRegistroActivo.value = tipoRegistroActivo.value === 'comercio' ? '' : 'comercio'
 }
 
 const cerrarSesion = async () => {

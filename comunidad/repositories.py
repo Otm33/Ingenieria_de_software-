@@ -1,26 +1,34 @@
 from django.db.models import Case, IntegerField, Value, When
 
-from .models import AcuerdoTrueque, Publicacion, Resena, SaldoComercial, Usuario, UsuarioAutorizado
+from .models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, SaldoComercial, Usuario, UsuarioAutorizado
 
 
 class UsuarioAutorizadoRepository:
-    def existe_email(self, email):
-        return UsuarioAutorizado.objects.filter(email=email).exists()
+    def existe_email(self, email, tipo=None):
+        queryset = UsuarioAutorizado.objects.filter(email=email)
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+        return queryset.exists()
 
-    def guardar_email(self, email):
-        return UsuarioAutorizado.objects.get_or_create(email=email)
+    def guardar_email(self, email, tipo="USUARIO"):
+        autorizado, creado = UsuarioAutorizado.objects.update_or_create(
+            email=email,
+            defaults={"tipo": tipo},
+        )
+        return autorizado, creado
 
 
 class UsuarioRepository:
     def existe_username(self, username):
         return Usuario.objects.filter(username=username).exists()
 
-    def crear_usuario(self, username, email, password, nombre_real):
+    def crear_usuario(self, username, email, password, nombre_real, es_comercio=False):
         return Usuario.objects.create_user(
             username=username,
             email=email,
             password=password,
             nombre_real=nombre_real,
+            es_comercio=es_comercio,
         )
 
     def obtener_por_id(self, usuario_id):
@@ -38,6 +46,9 @@ class UsuarioRepository:
 
 
 class PublicacionRepository:
+    def crear(self, usuario, datos):
+        return Publicacion.objects.create(usuario=usuario, **datos)
+
     def obtener_cartelera(self, categoria=None, urgencia=None):
         queryset = Publicacion.objects.filter(esta_activa=True)
 
@@ -69,10 +80,12 @@ class PublicacionRepository:
 
 
 class AcuerdoTruequeRepository:
-    def crear(self, emisor, receptor):
+    def crear(self, emisor, receptor, publicacion_emisor=None, publicacion_receptor=None):
         return AcuerdoTrueque.objects.create(
             emisor=emisor,
             receptor=receptor,
+            publicacion_emisor=publicacion_emisor,
+            publicacion_receptor=publicacion_receptor,
             estado="PENDIENTE",
         )
 
@@ -111,6 +124,37 @@ class SaldoComercialRepository:
         )
 
 
+class NotificacionPropuestaRepository:
+    def crear_notificacion(self, destinatario, remitente, trueque, publicacion_original, mensaje):
+        from .models import NotificacionPropuesta
+        return NotificacionPropuesta.objects.create(
+            destinatario=destinatario,
+            remitente=remitente,
+            trueque=trueque,
+            publicacion_original=publicacion_original,
+            mensaje=mensaje,
+            prioridad=True,
+            estado='PENDIENTE'
+        )
+    
+    def obtener_notificaciones_usuario(self, usuario):
+        from .models import NotificacionPropuesta
+        return list(
+            NotificacionPropuesta.objects.filter(destinatario=usuario)
+            .exclude(estado='LEIDA')
+            .order_by('-prioridad', '-creada_el')
+        )
+    
+    def marcar_como_leida(self, notificacion_id):
+        from .models import NotificacionPropuesta
+        from django.utils import timezone
+        notificacion = NotificacionPropuesta.objects.get(id=notificacion_id)
+        notificacion.estado = 'LEIDA'
+        notificacion.leida_el = timezone.now()
+        notificacion.save()
+        return notificacion
+
+
 class MatchmakingRepository:
     def buscar_matches(self, usuario, categorias_necesarias, categorias_ofrecidas):
         if not categorias_necesarias or not categorias_ofrecidas:
@@ -130,3 +174,60 @@ class MatchmakingRepository:
             .exclude(id=usuario.id)
             .distinct()
         )
+    
+    def verificar_coincidencia_por_titulo(self, usuario, publicacion_seleccionada):
+        """
+        Verifica si el usuario tiene publicaciones con el mismo título que la publicación seleccionada.
+        Retorna un diccionario con información sobre las coincidencias.
+        """
+        if not publicacion_seleccionada or not publicacion_seleccionada.titulo:
+            return {
+                "tiene_coincidencia": False,
+                "publicaciones_coincidentes": [],
+                "tipo_buscado": None,
+                "titulo": None
+            }
+        
+        # Determinar qué tipo de publicación buscamos (el complementario)
+        tipo_buscado = "NECESIDAD" if publicacion_seleccionada.tipo == "TALENTO" else "TALENTO"
+        
+        # Buscar publicaciones del usuario con el mismo título y tipo complementario
+        publicaciones_coincidentes = list(
+            Publicacion.objects.filter(
+                usuario=usuario,
+                titulo=publicacion_seleccionada.titulo,
+                tipo=tipo_buscado,
+                esta_activa=True,
+            )
+        )
+        
+        return {
+            "tiene_coincidencia": len(publicaciones_coincidentes) > 0,
+            "publicaciones_coincidentes": publicaciones_coincidentes,
+            "tipo_buscado": tipo_buscado,
+            "titulo": publicacion_seleccionada.titulo
+        }
+    
+    def buscar_matches_por_publicacion(self, usuario, publicacion):
+        """
+        Busca usuarios que tengan ofertas complementarias a una publicación específica.
+        Si la publicación es un TALENTO, busca usuarios que tengan NECESIDADES en esa categoría.
+        Si la publicación es una NECESIDAD, busca usuarios que tengan TALENTOS en esa categoría.
+        """
+        if not publicacion or not publicacion.categoria:
+            return []
+        
+        tipo_buscado = "NECESIDAD" if publicacion.tipo == "TALENTO" else "TALENTO"
+        
+        # Buscar usuarios que tengan publicaciones del tipo complementario en la misma categoría
+        usuarios_con_match = list(
+            Usuario.objects.filter(
+                publicaciones__tipo=tipo_buscado,
+                publicaciones__categoria=publicacion.categoria,
+                publicaciones__esta_activa=True,
+            )
+            .exclude(id=usuario.id)
+            .distinct()
+        )
+        
+        return usuarios_con_match

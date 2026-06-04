@@ -16,12 +16,25 @@ from .interfaces import (
 from .repositories import (
     AcuerdoTruequeRepository,
     MatchmakingRepository,
+    NotificacionPropuestaRepository,
     PublicacionRepository,
     ResenaRepository,
     SaldoComercialRepository,
     UsuarioAutorizadoRepository,
     UsuarioRepository,
 )
+
+CATEGORIAS_PUBLICACION = {
+    "Mantenimiento, Reparaciones y Construcción",
+    "Tecnología, Desarrollo y Redes",
+    "Limpieza, Organización y Hogar",
+    "Diseño, Multimedia y Arte",
+    "Redacción, Traducción y Contenidos",
+    "Educación, Asesoría y Tutorías",
+    "Automotriz, Transporte y Logística",
+    "Eventos, Ocio y Entretenimiento",
+    "Cuidado de la Salud, Bienestar y Terapias",
+}
 
 
 class BusinessError(Exception):
@@ -41,23 +54,63 @@ class CargaUsuariosService(CargaUsuariosInterface):
             raise BusinessError("No se recibio ningun archivo bajo los nombres 'archivo_csv' o 'archivo'.")
 
         data = archivo.read().decode("utf-8").splitlines()
-        reader = csv.reader(data)
-        next(reader, None)
+        
+        # Intentar formato nuevo con secciones separadas
+        try:
+            return self._cargar_formato_secciones(data)
+        except BusinessError:
+            # Si falla, intentar formato antiguo con columnas
+            return self._cargar_formato_columnas(data)
+
+    def _cargar_formato_secciones(self, data):
+        creados = 0
+        self.emails_procesados = []
+        seccion_actual = None
+        
+        for linea in data:
+            linea = linea.strip()
+            if not linea:
+                continue
+            
+            if linea == "email Usuarios":
+                seccion_actual = "USUARIO"
+                continue
+            elif linea == "email Comercios":
+                seccion_actual = "COMERCIO"
+                continue
+            
+            if seccion_actual and linea:
+                email = linea
+                _, creado = self.autorizados_repository.guardar_email(email, seccion_actual)
+                self.emails_procesados.append(f"{email} ({seccion_actual.lower()})")
+                if creado:
+                    creados += 1
+        
+        if not self.emails_procesados:
+            raise BusinessError("No se encontraron emails en el archivo.")
+        
+        return {
+            "mensaje": f"Lista procesada con exito. Se cargaron {creados} correos autorizados.",
+            "emails_procesados": self.emails_procesados,
+        }
+
+    def _cargar_formato_columnas(self, data):
+        reader = csv.DictReader(data)
+        if not reader.fieldnames:
+            raise BusinessError("El CSV debe tener las columnas 'email Usuarios' y 'email Comercios'.")
 
         creados = 0
         self.emails_procesados = []
         for row in reader:
-            if not row:
-                continue
+            for columna, tipo in (("email Usuarios", "USUARIO"), ("email Comercios", "COMERCIO")):
+                email = (row.get(columna) or "").strip()
+                if not email:
+                    continue
 
-            email = row[0].strip()
-            if not email:
-                continue
-
-            _, creado = self.autorizados_repository.guardar_email(email)
-            self.emails_procesados.append(email)
-            if creado:
-                creados += 1
+                _, creado = self.autorizados_repository.guardar_email(email, tipo)
+                self.emails_procesados.append(f"{email} ({tipo.lower()})")
+                if creado:
+                    creados += 1
 
         return {
             "mensaje": f"Lista procesada con exito. Se cargaron {creados} correos autorizados.",
@@ -75,17 +128,52 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
         username = datos.get("username")
         password = datos.get("password")
         nombre_real = datos.get("nombre_real")
+        es_comercio = bool(datos.get("es_comercio", False))
+        tipo_autorizado = "COMERCIO" if es_comercio else "USUARIO"
 
         if not all([email, username, password, nombre_real]):
             raise BusinessError("Faltan datos obligatorios.")
 
-        if not self.autorizados_repository.existe_email(email):
-            raise BusinessError("Usuario no autorizado para esta comunidad.", status_code=403)
+        if not self.autorizados_repository.existe_email(email, tipo_autorizado):
+            mensaje = "Comercio no autorizado para esta comunidad." if es_comercio else "Usuario no autorizado para esta comunidad."
+            raise BusinessError(mensaje, status_code=403)
 
         if self.usuario_repository.existe_username(username):
             raise BusinessError("El username ya esta en uso.")
 
-        return self.usuario_repository.crear_usuario(username, email, password, nombre_real)
+        return self.usuario_repository.crear_usuario(username, email, password, nombre_real, es_comercio)
+
+
+class PublicacionService:
+    def __init__(self, publicacion_repository=None):
+        self.publicacion_repository = publicacion_repository or PublicacionRepository()
+
+    def crear_publicacion(self, usuario, datos):
+        tipo = datos.get("tipo")
+        titulo = datos.get("titulo")
+        descripcion = datos.get("descripcion")
+        categoria = datos.get("categoria")
+        urgencia = datos.get("urgencia", "NORMAL")
+
+        if not all([tipo, titulo, descripcion, categoria]):
+            raise BusinessError("Faltan datos obligatorios para la publicacion.")
+
+        if tipo not in ["TALENTO", "NECESIDAD"]:
+            raise BusinessError("El tipo debe ser TALENTO o NECESIDAD.")
+
+        if categoria not in CATEGORIAS_PUBLICACION:
+            raise BusinessError("La categoria seleccionada no esta permitida.")
+
+        if urgencia not in ["NORMAL", "ALTA", "CRITICA"]:
+            raise BusinessError("La urgencia seleccionada no es valida.")
+
+        return self.publicacion_repository.crear(usuario, {
+            "tipo": tipo,
+            "titulo": titulo,
+            "descripcion": descripcion,
+            "categoria": categoria,
+            "urgencia": urgencia,
+        })
 
 
 class CarteleraService(CarteleraInterface):
@@ -97,11 +185,14 @@ class CarteleraService(CarteleraInterface):
 
 
 class TruequeService(TruequeInterface):
-    def __init__(self, trueque_repository=None, usuario_repository=None):
+    def __init__(self, trueque_repository=None, usuario_repository=None, publicacion_repository=None, notificacion_service=None):
         self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
         self.usuario_repository = usuario_repository or UsuarioRepository()
+        self.publicacion_repository = publicacion_repository or PublicacionRepository()
+        self.notificacion_service = notificacion_service or NotificacionService()
 
-    def crear_propuesta(self, emisor, receptor_id):
+    def crear_propuesta(self, emisor, receptor_id, publicacion_emisor_id=None, publicacion_receptor_id=None):
+        """Crea una propuesta de trueque con referencias a las publicaciones específicas."""
         if not receptor_id:
             raise BusinessError("Falta receptor_id.")
 
@@ -113,7 +204,42 @@ class TruequeService(TruequeInterface):
         if receptor.id == emisor.id:
             raise BusinessError("No puedes enviarte una propuesta a ti mismo.")
 
-        return self.trueque_repository.crear(emisor=emisor, receptor=receptor)
+        # Obtener las publicaciones si se proporcionan
+        from .models import Publicacion
+        pub_emisor = None
+        pub_receptor = None
+        
+        if publicacion_emisor_id:
+            try:
+                pub_emisor = Publicacion.objects.get(id=publicacion_emisor_id, esta_activa=True)
+            except Publicacion.DoesNotExist:
+                raise BusinessError("Publicación del emisor no encontrada.", status_code=404)
+        
+        if publicacion_receptor_id:
+            try:
+                pub_receptor = Publicacion.objects.get(id=publicacion_receptor_id, esta_activa=True)
+            except Publicacion.DoesNotExist:
+                raise BusinessError("Publicación del receptor no encontrada.", status_code=404)
+
+        trueque = self.trueque_repository.crear(
+            emisor=emisor, 
+            receptor=receptor,
+            publicacion_emisor=pub_emisor,
+            publicacion_receptor=pub_receptor
+        )
+        
+        # Crear notificación para el receptor
+        if pub_emisor:
+            mensaje = f"{emisor.nombre_real} está interesado en tu {pub_emisor.tipo.lower()}: {pub_emisor.titulo}"
+            self.notificacion_service.crear_notificacion_propuesta(
+                destinatario=receptor,
+                remitente=emisor,
+                trueque=trueque,
+                publicacion_original=pub_emisor,
+                mensaje=mensaje
+            )
+        
+        return trueque
 
     def responder_propuesta(self, receptor, trueque_id, accion):
         try:
@@ -122,7 +248,7 @@ class TruequeService(TruequeInterface):
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
-            trueque.estado = "ACEPTADO"
+            trueque.estado = "EN_CURSO"
             self.trueque_repository.guardar(trueque)
             return "Propuesta aceptada. Intercambio en curso."
 
@@ -134,30 +260,39 @@ class TruequeService(TruequeInterface):
         raise BusinessError("Accion invalida.")
 
     def finalizar_trueque(self, usuario, trueque_id):
+        """Finaliza el trueque cuando el usuario con necesidad confirma que el servicio fue completado."""
         with transaction.atomic():
             try:
                 trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
-            if usuario == trueque.emisor:
-                trueque.emisor_confirmado = True
-            elif usuario == trueque.receptor:
-                trueque.receptor_confirmado = True
-            else:
+            # Verificar que el usuario sea parte del trueque
+            if usuario != trueque.emisor and usuario != trueque.receptor:
                 raise BusinessError("No eres parte de este trueque.", status_code=403)
 
-            self.trueque_repository.guardar(trueque)
+            # Verificar que el trueque esté en curso
+            if trueque.estado != "EN_CURSO":
+                raise BusinessError("El trueque no está en curso.", status_code=400)
 
-            if not (trueque.emisor_confirmado and trueque.receptor_confirmado):
-                return "Confirmacion registrada. A la espera de la otra parte."
+            # Verificar que el usuario con necesidad sea quien finaliza
+            if trueque.publicacion_emisor and trueque.publicacion_emisor.tipo == "TALENTO":
+                # El emisor tiene el talento, el receptor tiene la necesidad
+                if usuario != trueque.receptor:
+                    raise BusinessError("Solo el usuario con necesidad puede finalizar el trueque.", status_code=403)
+            elif trueque.publicacion_receptor and trueque.publicacion_receptor.tipo == "NECESIDAD":
+                # El receptor tiene la necesidad
+                if usuario != trueque.receptor:
+                    raise BusinessError("Solo el usuario con necesidad puede finalizar el trueque.", status_code=403)
 
+            # Verificar límite de balance negativo
             emisor = trueque.emisor
             receptor = trueque.receptor
 
             if emisor.horas_de_vida - 1.0 < -10.0:
-                raise BusinessError("Limite de balance negativo excedido (-10).")
+                raise BusinessError("El emisor tiene un límite de balance negativo excedido (-10).")
 
+            # Transferir las horas (el que dio el servicio pierde una hora, el que recibió gana una hora)
             emisor.horas_de_vida -= 1.0
             receptor.horas_de_vida += 1.0
             self.usuario_repository.guardar(emisor)
@@ -165,7 +300,7 @@ class TruequeService(TruequeInterface):
 
             trueque.estado = "FINALIZADO"
             self.trueque_repository.guardar(trueque)
-            return "Trueque finalizado. Saldos actualizados. Modal de resena habilitado."
+            return "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado."
 
 
 class ResenaService(ResenaInterface):
@@ -193,6 +328,17 @@ class ResenaService(ResenaInterface):
 
         if usuario not in [trueque.emisor, trueque.receptor]:
             raise BusinessError("No eres parte de este trueque.", status_code=403)
+        
+        if trueque.estado != "FINALIZADO":
+            raise BusinessError("Solo se pueden dejar reseñas de trueques finalizados.", status_code=400)
+        
+        # Verificar si ya existe una reseña de este usuario para este trueque
+        try:
+            from .models import Resena
+            Resena.objects.get(trueque=trueque, calificador=usuario)
+            raise BusinessError("Ya has dejado una reseña para este trueque.", status_code=400)
+        except Resena.DoesNotExist:
+            pass  # No hay reseña previa, podemos continuar
 
         calificado = trueque.receptor if usuario == trueque.emisor else trueque.emisor
         self.resena_repository.crear(trueque, usuario, calificado, estrellas, comentario)
@@ -280,6 +426,22 @@ class ComercioService(ComercioInterface):
         return monto
 
 
+class NotificacionService:
+    def __init__(self, notificacion_repository=None):
+        self.notificacion_repository = notificacion_repository or NotificacionPropuestaRepository()
+    
+    def crear_notificacion_propuesta(self, destinatario, remitente, trueque, publicacion_original, mensaje):
+        return self.notificacion_repository.crear_notificacion(
+            destinatario, remitente, trueque, publicacion_original, mensaje
+        )
+    
+    def obtener_notificaciones_usuario(self, usuario):
+        return self.notificacion_repository.obtener_notificaciones_usuario(usuario)
+    
+    def marcar_notificacion_leida(self, notificacion_id):
+        return self.notificacion_repository.marcar_como_leida(notificacion_id)
+
+
 class MatchmakingService(MatchmakingInterface):
     def __init__(self, publicacion_repository=None, matchmaking_repository=None):
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
@@ -291,3 +453,29 @@ class MatchmakingService(MatchmakingInterface):
         mis_talentos = self.publicacion_repository.categorias_activas_por_usuario_y_tipo(usuario, "TALENTO")
         self.matches = self.matchmaking_repository.buscar_matches(usuario, mis_necesidades, mis_talentos)
         return self.matches
+    
+    def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
+        """Verifica si el usuario tiene publicaciones con el mismo título que la publicación seleccionada."""
+        try:
+            from .models import Publicacion
+            publicacion = Publicacion.objects.get(id=publicacion_id, esta_activa=True)
+            resultado = self.matchmaking_repository.verificar_coincidencia_por_titulo(usuario, publicacion)
+            return resultado
+        except Publicacion.DoesNotExist:
+            return {
+                "tiene_coincidencia": False,
+                "publicaciones_coincidentes": [],
+                "tipo_buscado": None,
+                "titulo": None,
+                "error": "Publicación no encontrada"
+            }
+    
+    def obtener_matches_por_publicacion(self, usuario, publicacion_id):
+        """Obtiene matches basados en una publicación específica."""
+        try:
+            from .models import Publicacion
+            publicacion = Publicacion.objects.get(id=publicacion_id, esta_activa=True)
+            self.matches = self.matchmaking_repository.buscar_matches_por_publicacion(usuario, publicacion)
+            return self.matches
+        except Publicacion.DoesNotExist:
+            return []

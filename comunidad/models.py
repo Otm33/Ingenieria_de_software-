@@ -8,11 +8,14 @@ from decimal import Decimal
 
 class UsuarioAutorizado(models.Model):
     """HU1: Lista blanca de correos autorizados por el Administrador via CSV."""
+    TIPO_CHOICES = [('USUARIO', 'Usuario'), ('COMERCIO', 'Comercio')]
+
     email = models.EmailField(unique=True)
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='USUARIO')
     cargado_el = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.email
+        return f"{self.email} ({self.tipo})"
 
 class Usuario(AbstractUser):
     """HU2: Perfil del usuario con balance de Horas de Vida y reputación."""
@@ -44,7 +47,7 @@ class Publicacion(models.Model):
     tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
     titulo = models.CharField(max_length=100)
     descripcion = models.TextField()
-    categoria = models.CharField(max_length=50, db_index=True) # db_index para búsquedas rápidas (<1.5s)
+    categoria = models.CharField(max_length=80, db_index=True) # db_index para búsquedas rápidas (<1.5s)
     urgencia = models.CharField(max_length=10, choices=URGENCIA_CHOICES, default='NORMAL', db_index=True)
     esta_activa = models.BooleanField(default=True)
 
@@ -72,15 +75,24 @@ class AcuerdoTrueque(models.Model):
         ('PENDIENTE', 'Pendiente'),
         ('ACEPTADO', 'Aceptado'),
         ('RECHAZADO', 'Rechazado'),
+        ('EN_CURSO', 'En Curso'),
         ('FINALIZADO', 'Finalizado'),
     )
     emisor = models.ForeignKey(Usuario, related_name='trueques_enviados', on_delete=models.CASCADE)
     receptor = models.ForeignKey(Usuario, related_name='trueques_recibidos', on_delete=models.CASCADE)
     estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
     
-    # NUEVO: Para la confirmación de ambas partes antes de transferir el saldo
+    # Referencias a las publicaciones específicas involucradas
+    publicacion_emisor = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_como_emisor')
+    publicacion_receptor = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_como_receptor')
+    
+    # Para la confirmación de ambas partes antes de transferir el saldo
     emisor_confirmado = models.BooleanField(default=False)
     receptor_confirmado = models.BooleanField(default=False)
+    
+    # Fecha de creación y modificación
+    creado_el = models.DateTimeField(auto_now_add=True, null=True)  # null=True para migraciones
+    actualizado_el = models.DateTimeField(auto_now=True, null=True)  # null=True para migraciones
 
 class Resena(models.Model):
     """HU4: Calificaciones e historial de confianza post-trueque."""
@@ -89,6 +101,28 @@ class Resena(models.Model):
     calificado = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='resenas_recibidas')
     estrellas = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comentario = models.TextField(max_length=500) # Restricción estricta de 500 caracteres
+
+class NotificacionPropuesta(models.Model):
+    """Notificaciones para propuestas de trueque que aparecen en la cartelera."""
+    ESTADOS = (
+        ('PENDIENTE', 'Pendiente'),
+        ('ACEPTADA', 'Aceptada'),
+        ('RECHAZADA', 'Rechazada'),
+        ('LEIDA', 'Leída'),
+    )
+    
+    destinatario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_recibidas')
+    remitente = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_enviadas')
+    trueque = models.ForeignKey(AcuerdoTrueque, on_delete=models.CASCADE, related_name='notificaciones')
+    publicacion_original = models.ForeignKey(Publicacion, on_delete=models.CASCADE, related_name='notificaciones')
+    mensaje = models.TextField(max_length=300)
+    estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
+    creada_el = models.DateTimeField(auto_now_add=True)
+    leida_el = models.DateTimeField(null=True, blank=True)
+    prioridad = models.BooleanField(default=True) # Si es True, aparece primero en la cartelera
+    
+    class Meta:
+        ordering = ['-prioridad', '-creada_el']
 
 class SaldoComercial(models.Model):
     TIPO_MOVIMIENTO = [

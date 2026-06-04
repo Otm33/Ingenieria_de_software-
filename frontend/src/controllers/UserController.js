@@ -36,6 +36,26 @@ export default class UserController {
     return await this.service.obtenerCartelera(filtros)
   }
 
+  async crearPublicacion(payload) {
+    return await this.service.crearPublicacion(payload)
+  }
+
+  async obtenerMiPerfil() {
+    return await this.service.obtenerMiPerfil()
+  }
+
+  async obtenerMisPublicaciones() {
+    return await this.service.obtenerMisPublicaciones()
+  }
+
+  async verificarCoincidenciaPorTitulo(publicacionId) {
+    return await this.service.verificarCoincidenciaPorTitulo(publicacionId)
+  }
+
+  async obtenerMatches(publicacionId = null) {
+    return await this.service.obtenerMatches(publicacionId)
+  }
+
   get users() {
     return this.service.users
   }

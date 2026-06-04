@@ -6,6 +6,7 @@ from .views import (
     LoginView,
     LogoutView,
     CarteleraFeedView, 
+    CrearPublicacionView,
     FinalizarTruequeView, 
     RegistrarResenaView, 
     EmitirVueltoComercialView,
@@ -13,7 +14,12 @@ from .views import (
     CrearPropuestaView,
     ResponderPropuestaView,
     CatalogoComerciosView,
-    PagarConSaldoView
+    PagarConSaldoView,
+    VerPerfilUsuarioView,
+    VerSaldoComercialView,
+    VerMiPerfilView,
+    MisPublicacionesView,
+    NotificacionesView
 )
 
 # CAMBIO CONTROLADOR: estas rutas son la frontera HTTP que consume la vista Vue.
@@ -24,6 +30,7 @@ urlpatterns = [
     path('cargar-csv/', CargarUsuariosCSVView.as_view(), name='cargar_csv'),
     path('registro/', RegistroUsuarioView.as_view(), name='registro'),
     path('cartelera/', CarteleraFeedView.as_view(), name='cartelera'),
+    path('publicaciones/', CrearPublicacionView.as_view(), name='crear_publicacion'),
     
     # HU4: Match y Propuestas
     path('matchmaking/', MatchmakingView.as_view(), name='matchmaking'),
@@ -34,7 +41,17 @@ urlpatterns = [
     path('trueques/<int:trueque_id>/finalizar/', FinalizarTruequeView.as_view(), name='finalizar_trueque'),
     path('resenas/', RegistrarResenaView.as_view(), name='registrar_resena'),
     
+    # Perfiles de usuarios
+    path('perfil/<int:usuario_id>/', VerPerfilUsuarioView.as_view(), name='ver_perfil_usuario'),
+    path('mi-perfil/', VerMiPerfilView.as_view(), name='ver_mi_perfil'),
+    path('mis-publicaciones/', MisPublicacionesView.as_view(), name='mis_publicaciones'),
+    
+    # Notificaciones
+    path('notificaciones/', NotificacionesView.as_view(), name='notificaciones'),
+    
+    # Saldos comerciales
     path('comercio/emitir-vuelto/', EmitirVueltoComercialView.as_view(), name='emitir_vuelto'),
     path('comercios/', CatalogoComerciosView.as_view(), name='catalogo_comercios'),
     path('comercio/pagar/', PagarConSaldoView.as_view(), name='pagar_con_saldo'),
+    path('mi-saldo-comercial/', VerSaldoComercialView.as_view(), name='ver_saldo_comercial'),
 ]
