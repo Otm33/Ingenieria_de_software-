@@ -346,6 +346,16 @@ a { color: inherit; }
   margin-top: 16px;
 }
 
+.field-hint {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted, #64748b);
+}
+
+.form-group--urgencia-publicacion {
+  grid-column: 1 / -1;
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -399,6 +409,29 @@ a { color: inherit; }
 
 .service-card--alta { border-left-color: var(--warning); }
 .service-card--critica { border-left-color: var(--danger); }
+
+.service-grid--selectable .service-card {
+  cursor: pointer;
+}
+
+.service-card--seleccionada {
+  outline: 2px solid var(--primary, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-weight: normal;
+}
+
+.seleccion-info {
+  margin-top: 1rem;
+  color: var(--primary-dark);
+  font-weight: 600;
+}
 
 .service-card__category {
   display: block;

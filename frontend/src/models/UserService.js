@@ -87,8 +87,10 @@ export default class UserService {
   // CAMBIO MODELO/SERVICIO: consulta la cartelera real guardada en la BD.
   async obtenerCartelera(filtros = {}) {
     const params = new URLSearchParams()
-    if (filtros.categoria) params.set('categoria', filtros.categoria)
-    if (filtros.urgencia) params.set('urgencia', filtros.urgencia)
+    if (filtros.categoria) params.append('categoria', filtros.categoria)
+    if (Array.isArray(filtros.urgencias)) {
+      filtros.urgencias.forEach((urgencia) => params.append('urgencia', urgencia))
+    }
 
     const endpoint = params.toString() ? `cartelera/?${params.toString()}` : 'cartelera/'
     const data = await this._request(endpoint)

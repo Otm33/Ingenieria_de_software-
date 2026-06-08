@@ -143,9 +143,13 @@ class CarteleraFeedView(generics.ListAPIView):
         self.servicio = servicio or CarteleraService()
 
     def get_queryset(self):
+        urgencias_raw = self.request.query_params.getlist("urgencia")
+        urgencias_validas = {"ALTA", "CRITICA"}
+        urgencias = [u for u in urgencias_raw if u in urgencias_validas] or None
+
         return self.servicio.obtener_publicaciones(
             categoria=self.request.query_params.get("categoria"),
-            urgencia=self.request.query_params.get("urgencia"),
+            urgencias=urgencias,
         )
 
 

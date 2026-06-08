@@ -67,6 +67,9 @@ class Publicacion(models.Model):
         # HU2 Restricción 3: Un usuario con un saldo menor a -10 horas no puede pausar ofertas (o alterarlas)
         if self.usuario.horas_de_vida < -10.0:
             raise ValidationError("Saldo crítico inferior a -10 horas. Operación bloqueada.")
+
+        if self.tipo == "TALENTO" and self.urgencia != "NORMAL":
+            raise ValidationError("Los talentos solo pueden tener urgencia Normal.")
             
         super().save(*args, **kwargs)
 

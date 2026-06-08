@@ -64,13 +64,13 @@ class PublicacionRepository:
     def contar_activas_por_tipo(self, usuario, tipo):
         return Publicacion.objects.filter(usuario=usuario, tipo=tipo, esta_activa=True).count()
 
-    def obtener_cartelera(self, categoria=None, urgencia=None):
+    def obtener_cartelera(self, categoria=None, urgencias=None):
         queryset = Publicacion.objects.filter(esta_activa=True)
 
         if categoria:
             queryset = queryset.filter(categoria=categoria)
-        if urgencia:
-            queryset = queryset.filter(urgencia=urgencia)
+        if urgencias:
+            queryset = queryset.filter(urgencia__in=urgencias)
 
         return queryset.annotate(
             prioridad_urgencia=Case(

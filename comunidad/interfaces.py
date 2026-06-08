@@ -15,7 +15,7 @@ class RegistroUsuariosInterface(ABC):
 
 class CarteleraInterface(ABC):
     @abstractmethod
-    def obtener_publicaciones(self, categoria=None, urgencia=None):
+    def obtener_publicaciones(self, categoria=None, urgencias=None):
         pass
 
 

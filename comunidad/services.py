@@ -179,6 +179,9 @@ class PublicacionService:
         if urgencia not in ["NORMAL", "ALTA", "CRITICA"]:
             raise BusinessError("La urgencia seleccionada no es valida.")
 
+        if tipo == "TALENTO" and urgencia != "NORMAL":
+            raise BusinessError("Los talentos solo pueden tener urgencia Normal.")
+
         if contiene_palabra_prohibida(titulo) or contiene_palabra_prohibida(descripcion):
             raise BusinessError("La publicación contiene palabras no permitidas.")
 
@@ -224,8 +227,8 @@ class CarteleraService(CarteleraInterface):
     def __init__(self, publicacion_repository=None):
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
 
-    def obtener_publicaciones(self, categoria=None, urgencia=None):
-        return self.publicacion_repository.obtener_cartelera(categoria=categoria, urgencia=urgencia)
+    def obtener_publicaciones(self, categoria=None, urgencias=None):
+        return self.publicacion_repository.obtener_cartelera(categoria=categoria, urgencias=urgencias)
 
 
 class TruequeService(TruequeInterface):

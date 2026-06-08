@@ -62,14 +62,21 @@
             </select>
           </div>
 
-          <div class="form-group">
-            <label for="urgencia_publicacion">Urgencia</label>
-            <select id="urgencia_publicacion" v-model="formPublicacion.urgencia" class="select">
-              <option value="NORMAL">Normal</option>
-              <option value="ALTA">Urgencia alta</option>
-              <option value="CRITICA">Necesidad critica</option>
-            </select>
-          </div>
+        </div>
+
+        <div
+          v-if="formPublicacion.tipo === 'NECESIDAD'"
+          class="form-group form-group--full form-group--urgencia-publicacion"
+        >
+          <label for="urgencia_publicacion">Nivel de urgencia de la publicación</label>
+          <select id="urgencia_publicacion" v-model="formPublicacion.urgencia" class="select" required>
+            <option value="NORMAL">Normal</option>
+            <option value="ALTA">Emergencia de urgencia alta</option>
+            <option value="CRITICA">Necesidad crítica</option>
+          </select>
+          <p class="field-hint">
+            La urgencia aplica a necesidades. Los talentos se publican con prioridad normal.
+          </p>
         </div>
 
         <div class="form-group form-group--full">
@@ -173,13 +180,15 @@
           </div>
 
           <div class="form-group">
-            <label for="urgencia">Urgencia</label>
-            <select id="urgencia" v-model="filtroUrgencia" class="select">
-              <option value="">Cualquier urgencia</option>
-              <option value="NORMAL">Normal</option>
-              <option value="ALTA">Urgencia alta</option>
-              <option value="CRITICA">Necesidad critica</option>
-            </select>
+            <span>Urgencia</span>
+            <label class="checkbox-label">
+              <input v-model="filtroEmergenciaAlta" type="checkbox" />
+              Emergencias de urgencia alta
+            </label>
+            <label class="checkbox-label">
+              <input v-model="filtroNecesidadCritica" type="checkbox" />
+              Necesidades críticas
+            </label>
           </div>
         </div>
 
@@ -207,120 +216,55 @@
       <div class="panel__body">
         <div v-if="cargando" class="loading-state">Cargando publicaciones...</div>
 
-        <div v-else-if="publicaciones.length" class="service-grid">
-          <article
-            v-for="pub in publicaciones"
-            :key="pub.id"
-            :class="['service-card', clasePorUrgencia(pub.urgencia)]"
-          >
-            <span class="service-card__category">{{ pub.categoria }}</span>
+        <template v-else-if="publicaciones.length">
+          <div class="service-grid service-grid--selectable">
+            <article
+              v-for="pub in publicaciones"
+              :key="pub.id"
+              :class="[
+                'service-card',
+                clasePorUrgencia(pub.urgencia),
+                { 'service-card--seleccionada': publicacionSeleccionadaId === pub.id },
+              ]"
+              role="button"
+              tabindex="0"
+              @click="seleccionarPublicacion(pub.id)"
+              @keydown.enter.prevent="seleccionarPublicacion(pub.id)"
+              @keydown.space.prevent="seleccionarPublicacion(pub.id)"
+            >
+              <span class="service-card__category">{{ pub.categoria }}</span>
 
-            <div class="service-card__top">
-              <span :class="['badge', pub.tipo === 'TALENTO' ? 'badge--talento' : 'badge--necesidad']">
-                {{ etiquetaTipo(pub.tipo) }}
-              </span>
-              <span :class="['badge', badgeUrgencia(pub.urgencia)]">{{ etiquetaUrgencia(pub.urgencia) }}</span>
-            </div>
+              <div class="service-card__top">
+                <span :class="['badge', pub.tipo === 'TALENTO' ? 'badge--talento' : 'badge--necesidad']">
+                  {{ etiquetaTipo(pub.tipo) }}
+                </span>
+                <span :class="['badge', badgeUrgencia(pub.urgencia)]">{{ etiquetaUrgencia(pub.urgencia) }}</span>
+              </div>
 
-            <h3 class="service-card__title">{{ pub.titulo }}</h3>
+              <h3 class="service-card__title">{{ pub.titulo }}</h3>
 
-            <p class="service-card__description">{{ pub.descripcion }}</p>
+              <p class="service-card__description">{{ pub.descripcion }}</p>
 
-            <div class="service-card__separator"></div>
+              <div class="service-card__separator"></div>
 
-            <div class="service-card__footer">
-              <strong>{{ pub.usuarioNombreReal || 'Usuario' }}</strong>
-              <span>{{ estrellas(pub.usuarioEstrellas) }} / 5.0</span>
-            </div>
+              <div class="service-card__footer">
+                <strong>{{ pub.usuarioNombreReal || 'Usuario' }}</strong>
+                <span>{{ estrellas(pub.usuarioEstrellas) }} / 5.0</span>
+              </div>
+            </article>
+          </div>
 
-            <div class="service-card__actions">
-              <button 
-                class="button button--small button--primary" 
-                type="button" 
-                @click="buscarMatchPorPublicacion(pub.id)"
-                :disabled="buscandoMatch"
-              >
-                {{ buscandoMatch ? 'Buscando...' : '🔍 Buscar Match' }}
-              </button>
-            </div>
-          </article>
-        </div>
+          <p v-if="publicacionSeleccionadaInfo" class="seleccion-info">
+            Has seleccionado: {{ publicacionSeleccionadaInfo.titulo }} — ofrecido por {{ publicacionSeleccionadaInfo.usuarioNombreReal || 'Usuario' }}
+          </p>
+        </template>
 
         <div v-else class="empty-state">
-          No hay servicios disponibles con los filtros seleccionados.
+          {{ mensajeVacio }}
         </div>
       </div>
     </section>
 
-    <!-- Modal de resultados de match -->
-    <div v-if="mostrarModalMatch" class="modal-overlay" @click="cerrarModalMatch">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3 class="modal-title">Verificación de Coincidencia</h3>
-          <button class="button button--small button--secondary" @click="cerrarModalMatch">✕</button>
-        </div>
-        
-        <div class="modal-body">
-          <div v-if="resultadoMatch && resultadoMatch.encontrado" class="match-resultado">
-            <p class="match-mensaje">{{ resultadoMatch.mensaje }}</p>
-            
-            <div v-if="verificacionCoincidencia && verificacionCoincidencia.publicaciones_coincidentes" class="match-lista">
-              <div 
-                v-for="pub in verificacionCoincidencia.publicaciones_coincidentes" 
-                :key="pub.id" 
-                class="match-item"
-              >
-                <div class="match-item-info">
-                  <span :class="['badge', pub.tipo === 'TALENTO' ? 'badge--talento' : 'badge--necesidad']">
-                    {{ pub.tipo === 'TALENTO' ? 'Talento' : 'Necesidad' }}
-                  </span>
-                  <strong>{{ pub.titulo }}</strong>
-                  <span>{{ pub.categoria }}</span>
-                </div>
-                <button 
-                  class="button button--small button--primary" 
-                  @click="confirmarPropuesta"
-                >
-                  Proponer Trueque
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <div v-else class="match-vacio">
-            <p>{{ resultadoMatch?.mensaje || 'No se encontraron resultados.' }}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal de confirmación cuando no hay coincidencias -->
-    <div v-if="mostrandoConfirmacion" class="modal-overlay" @click="cancelarConfirmacion">
-      <div class="modal-content modal-content--confirmacion" @click.stop>
-        <div class="modal-header">
-          <h3 class="modal-title">¿Estás seguro?</h3>
-          <button class="button button--small button--secondary" @click="cancelarConfirmacion">✕</button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="confirmacion-mensaje">
-            <p class="alert alert--warning">
-              {{ resultadoMatch?.mensaje || 'No tienes publicaciones coincidentes.' }}
-            </p>
-            <p>¿Estás seguro de que quieres realizar este trueque sin tener una publicación complementaria?</p>
-          </div>
-          
-          <div class="form-actions">
-            <button class="button button--primary" @click="confirmarPropuesta">
-              Confirmar
-            </button>
-            <button class="button button--secondary" @click="cancelarConfirmacion">
-              Cancelar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
   </section>
 </template>
 
@@ -345,7 +289,10 @@ const publicaciones = ref([]);
 const misPublicaciones = ref([]);
 const usuarioActualId = ref(null);
 const filtroCategoria = ref('');
-const filtroUrgencia = ref('');
+const filtroEmergenciaAlta = ref(false);
+const filtroNecesidadCritica = ref(false);
+const filtrosActivos = ref(false);
+const publicacionSeleccionadaId = ref(null);
 const cargando = ref(false);
 const cargandoMisPublicaciones = ref(false);
 const errorFiltro = ref('');
@@ -355,12 +302,6 @@ const publicacionExitosa = ref(false);
 const feedbackEstadoPublicacion = ref('');
 const feedbackEstadoExitoso = ref(false);
 const procesandoEstadoId = ref(null);
-const buscandoMatch = ref(false);
-const resultadoMatch = ref(null);
-const mostrarModalMatch = ref(false);
-const verificacionCoincidencia = ref(null);
-const publicacionSeleccionada = ref(null);
-const mostrandoConfirmacion = ref(false);
 const formPublicacion = reactive({
   tipo: 'TALENTO',
   titulo: '',
@@ -372,9 +313,24 @@ const formPublicacion = reactive({
 const totalCriticas = computed(() => publicaciones.value.filter((pub) => pub.urgencia === 'CRITICA').length);
 const totalTalentos = computed(() => publicaciones.value.filter((pub) => pub.tipo === 'TALENTO').length);
 const titulosDisponibles = computed(() => titulosParaCategoria(formPublicacion.categoria));
+const mensajeVacio = computed(() =>
+  filtrosActivos.value
+    ? 'No hay servicios de esta categoría en este momento'
+    : 'No hay servicios disponibles en la cartelera.'
+);
+const publicacionSeleccionadaInfo = computed(() => {
+  if (!publicacionSeleccionadaId.value) return null;
+  return publicaciones.value.find((pub) => pub.id === publicacionSeleccionadaId.value) || null;
+});
 
 watch(() => formPublicacion.categoria, () => {
   formPublicacion.titulo = '';
+});
+
+watch(() => formPublicacion.tipo, (nuevoTipo) => {
+  if (nuevoTipo === 'TALENTO') {
+    formPublicacion.urgencia = 'NORMAL';
+  }
 });
 
 const cargarMisPublicaciones = async () => {
@@ -401,34 +357,57 @@ watch(() => props.modoPublicar, (nuevoValor) => {
 
 const obtenerPublicaciones = async (conFiltros = false) => {
   cargando.value = true;
-  errorFiltro.value = '';
+  if (!conFiltros) {
+    errorFiltro.value = '';
+  }
 
   try {
-    const params = {};
+    let params = {};
     if (conFiltros) {
-      if (filtroCategoria.value) params.categoria = filtroCategoria.value;
-      if (filtroUrgencia.value) params.urgencia = filtroUrgencia.value;
+      params = { categoria: filtroCategoria.value };
+      const urgencias = [];
+      if (filtroEmergenciaAlta.value) urgencias.push('ALTA');
+      if (filtroNecesidadCritica.value) urgencias.push('CRITICA');
+      if (urgencias.length) params.urgencias = urgencias;
+      filtrosActivos.value = true;
+    } else {
+      filtrosActivos.value = false;
+      publicacionSeleccionadaId.value = null;
     }
 
     const todasPublicaciones = await userController.obtenerCartelera(params);
-    // Filtrar para excluir las publicaciones del usuario actual
-    publicaciones.value = todasPublicaciones.filter(pub => pub.usuario !== usuarioActualId.value);
+    publicaciones.value = todasPublicaciones.filter((pub) => pub.usuario !== usuarioActualId.value);
   } catch (err) {
-    errorFiltro.value = 'No se pudo cargar la cartelera. Verifica que el backend este activo.';
+    errorFiltro.value = 'No se pudo cargar la cartelera. Verifica que el backend esté activo.';
   } finally {
     cargando.value = false;
   }
 };
 
 const aplicarFiltros = () => {
+  if (!filtroCategoria.value) {
+    errorFiltro.value = 'Debe seleccionar una categoría para aplicar filtros.';
+    return;
+  }
+  errorFiltro.value = '';
+  publicacionSeleccionadaId.value = null;
   obtenerPublicaciones(true);
 };
 
 const restablecerFiltros = () => {
   filtroCategoria.value = '';
-  filtroUrgencia.value = '';
+  filtroEmergenciaAlta.value = false;
+  filtroNecesidadCritica.value = false;
   errorFiltro.value = '';
+  filtrosActivos.value = false;
+  publicacionSeleccionadaId.value = null;
   obtenerPublicaciones(false);
+};
+
+const seleccionarPublicacion = (publicacionId) => {
+  publicacionSeleccionadaId.value = publicacionSeleccionadaId.value === publicacionId
+    ? null
+    : publicacionId;
 };
 
 const limpiarPublicacion = () => {
@@ -516,77 +495,6 @@ const etiquetaUrgencia = (urgencia) => {
 };
 
 const estrellas = (valor) => Number(valor || 5).toFixed(1);
-
-const buscarMatchPorPublicacion = async (publicacionId) => {
-  buscandoMatch.value = true;
-  verificacionCoincidencia.value = null;
-  publicacionSeleccionada.value = publicacionId;
-  
-  try {
-    const resultado = await userController.verificarCoincidenciaPorTitulo(publicacionId);
-    verificacionCoincidencia.value = resultado;
-    
-    if (resultado.tiene_coincidencia) {
-      // El usuario tiene publicaciones con el mismo título
-      mostrarModalMatch.value = true;
-      resultadoMatch.value = {
-        encontrado: true,
-        mensaje: `¡Tienes ${resultado.publicaciones_coincidentes.length} publicación(es) con el título "${resultado.titulo}" del tipo ${resultado.tipo_buscado}!`,
-        verificacion: resultado
-      };
-    } else {
-      // El usuario NO tiene publicaciones con el mismo título
-      mostrandoConfirmacion.value = true;
-      resultadoMatch.value = {
-        encontrado: false,
-        mensaje: `No tienes ninguna publicación con el título "${resultado.titulo}" del tipo ${resultado.tipo_buscado}.`,
-        verificacion: resultado
-      };
-    }
-  } catch (err) {
-    resultadoMatch.value = {
-      encontrado: false,
-      mensaje: 'Error al verificar coincidencia: ' + (err.message || 'Error desconocido')
-    };
-    mostrarModalMatch.value = true;
-  } finally {
-    buscandoMatch.value = false;
-  }
-};
-
-const cerrarModalMatch = () => {
-  mostrarModalMatch.value = false;
-  resultadoMatch.value = null;
-  verificacionCoincidencia.value = null;
-};
-
-const cancelarConfirmacion = () => {
-  mostrandoConfirmacion.value = false;
-  resultadoMatch.value = null;
-  verificacionCoincidencia.value = null;
-  publicacionSeleccionada.value = null;
-};
-
-const confirmarPropuesta = async () => {
-  try {
-    alert('Propuesta enviada al usuario A. Ahora aparecerá en su cartelera como notificación prioritaria.');
-    
-    mostrandoConfirmacion.value = false;
-    resultadoMatch.value = null;
-    verificacionCoincidencia.value = null;
-  } catch (err) {
-    alert('Error al confirmar propuesta: ' + (err.message || 'Error desconocido'));
-  }
-};
-
-const iniciarTrueque = async (usuarioId) => {
-  try {
-    alert('Funcionalidad de iniciar trueque será implementada próximamente. Usuario ID: ' + usuarioId);
-    cerrarModalMatch();
-  } catch (err) {
-    alert('Error al iniciar trueque: ' + (err.message || 'Error desconocido'));
-  }
-};
 
 onMounted(async () => {
   const sesion = await userController.obtenerSesionActual();
