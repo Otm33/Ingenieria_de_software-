@@ -25,6 +25,17 @@ export default class UserService {
     return data
   }
 
+  async validarEmail(email, esComercio = false) {
+    return await this._request('registro/validar-email/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email?.trim(),
+        es_comercio: Boolean(esComercio),
+      }),
+    })
+  }
+
   // CAMBIO MODELO/SERVICIO: registra usuarios reales en la BD mediante /api/registro/.
   async registrarUsuario(formulario) {
     const data = await this._request('registro/', {
@@ -102,9 +113,27 @@ export default class UserService {
     return data
   }
 
+  async obtenerComunidad() {
+    return await this._request('comunidad/')
+  }
+
+  async obtenerPerfilUsuario(id) {
+    return await this._request(`perfil/${id}/`)
+  }
+
   async obtenerMisPublicaciones() {
     const data = await this._request('mis-publicaciones/')
     return data.publicaciones || []
+  }
+
+  async actualizarEstadoPublicacion(id, estaActiva) {
+    const data = await this._request(`publicaciones/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esta_activa: Boolean(estaActiva) }),
+    })
+
+    return new Publicacion(data)
   }
 
   async verificarCoincidenciaPorTitulo(publicacionId) {

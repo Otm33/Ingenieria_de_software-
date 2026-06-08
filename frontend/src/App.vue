@@ -11,6 +11,9 @@
             
             <span>Publicar</span>
           </button>
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'comunidad'" title="Comunidad">
+            <span>Comunidad</span>
+          </button>
         </nav>
 
         <nav v-if="usuarioActual?.esStaff || usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
@@ -78,9 +81,17 @@
       </section>
 
       <template v-else>
+        <p v-if="mensajeBienvenida" class="welcome-banner alert alert--success">
+          {{ mensajeBienvenida }}
+          <button class="welcome-banner__close" type="button" @click="mensajeBienvenida = ''" aria-label="Cerrar mensaje">
+            ×
+          </button>
+        </p>
+
         <Cartelera v-if="seccionActiva === 'cartelera'" />
         <Cartelera v-else-if="seccionActiva === 'publicar'" :modo-publicar="true" @volver-cartelera="seccionActiva = 'cartelera'" />
         <Perfil v-else-if="seccionActiva === 'perfil'" />
+        <Comunidad v-else-if="seccionActiva === 'comunidad'" />
         <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
         <AdminCSV v-else-if="usuarioActual.esStaff && seccionActiva === 'csv'" />
         <Cartelera v-else />
@@ -95,6 +106,7 @@ import AdminCSV from './views/AdminCSV.vue'
 import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
 import Perfil from './views/Perfil.vue'
+import Comunidad from './views/Comunidad.vue'
 
 const userController = inject('userController')
 const usuarioActual = ref(null)
@@ -103,6 +115,7 @@ const procesandoLogin = ref(false)
 const loginError = ref('')
 const seccionActiva = ref('cartelera')
 const tipoRegistroActivo = ref('')
+const mensajeBienvenida = ref('')
 const loginForm = reactive({ username: '', password: '' })
 
 const cargarSesion = async () => {
@@ -133,9 +146,24 @@ const iniciarSesion = async () => {
 }
 
 const iniciarSesionDespuesDeRegistro = async (credenciales) => {
-  loginForm.username = credenciales.username
-  loginForm.password = credenciales.password
-  await iniciarSesion()
+  try {
+    if (credenciales.esNuevoMiembro) {
+      usuarioActual.value = await userController.obtenerSesionActual()
+        || await userController.iniciarSesion(credenciales)
+      mensajeBienvenida.value = '¡Bienvenido, Miembro Activo! Tu perfil y primer talento ya están publicados en la comunidad.'
+      seccionActiva.value = 'perfil'
+      tipoRegistroActivo.value = ''
+      loginForm.username = ''
+      loginForm.password = ''
+      return
+    }
+
+    loginForm.username = credenciales.username
+    loginForm.password = credenciales.password
+    await iniciarSesion()
+  } catch (error) {
+    loginError.value = error.message || 'No se pudo iniciar sesion despues del registro.'
+  }
 }
 
 const mostrarRegistroUsuario = () => {

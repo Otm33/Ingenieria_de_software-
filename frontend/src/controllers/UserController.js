@@ -6,6 +6,10 @@ export default class UserController {
     this.service = service
   }
 
+  async validarEmail(email, esComercio = false) {
+    return await this.service.validarEmail(email, esComercio)
+  }
+
   // CAMBIO CONTROLADOR: la vista llama este metodo, el servicio decide como hablar con la BD.
   async registrarUsuario(payload) {
     return await this.service.registrarUsuario(payload)
@@ -44,8 +48,20 @@ export default class UserController {
     return await this.service.obtenerMiPerfil()
   }
 
+  async obtenerComunidad() {
+    return await this.service.obtenerComunidad()
+  }
+
+  async obtenerPerfilUsuario(id) {
+    return await this.service.obtenerPerfilUsuario(id)
+  }
+
   async obtenerMisPublicaciones() {
     return await this.service.obtenerMisPublicaciones()
+  }
+
+  async actualizarEstadoPublicacion(id, estaActiva) {
+    return await this.service.actualizarEstadoPublicacion(id, estaActiva)
   }
 
   async verificarCoincidenciaPorTitulo(publicacionId) {

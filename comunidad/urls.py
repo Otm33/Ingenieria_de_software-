@@ -1,14 +1,16 @@
 from django.urls import path
 from .views import (
-    CargarUsuariosCSVView, 
-    RegistroUsuarioView, 
+    CargarUsuariosCSVView,
+    RegistroUsuarioView,
+    ValidarEmailRegistroView,
     SesionActualView,
     LoginView,
     LogoutView,
-    CarteleraFeedView, 
+    CarteleraFeedView,
     CrearPublicacionView,
-    FinalizarTruequeView, 
-    RegistrarResenaView, 
+    ActualizarPublicacionView,
+    FinalizarTruequeView,
+    RegistrarResenaView,
     EmitirVueltoComercialView,
     MatchmakingView,
     CrearPropuestaView,
@@ -19,7 +21,8 @@ from .views import (
     VerSaldoComercialView,
     VerMiPerfilView,
     MisPublicacionesView,
-    NotificacionesView
+    DirectorioComunidadView,
+    NotificacionesView,
 )
 
 # CAMBIO CONTROLADOR: estas rutas son la frontera HTTP que consume la vista Vue.
@@ -29,8 +32,11 @@ urlpatterns = [
     path('logout/', LogoutView.as_view(), name='logout'),
     path('cargar-csv/', CargarUsuariosCSVView.as_view(), name='cargar_csv'),
     path('registro/', RegistroUsuarioView.as_view(), name='registro'),
+    path('registro/validar-email/', ValidarEmailRegistroView.as_view(), name='validar_email_registro'),
+    path('comunidad/', DirectorioComunidadView.as_view(), name='directorio_comunidad'),
     path('cartelera/', CarteleraFeedView.as_view(), name='cartelera'),
     path('publicaciones/', CrearPublicacionView.as_view(), name='crear_publicacion'),
+    path('publicaciones/<int:publicacion_id>/', ActualizarPublicacionView.as_view(), name='actualizar_publicacion'),
     
     # HU4: Match y Propuestas
     path('matchmaking/', MatchmakingView.as_view(), name='matchmaking'),

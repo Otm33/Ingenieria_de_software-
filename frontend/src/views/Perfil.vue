@@ -17,7 +17,10 @@
               {{ getInitials() }}
             </div>
             <div class="perfil-datos-principales">
-              <h3>{{ datosPerfil.usuario.nombre_real }}</h3>
+              <div class="perfil-nombre-fila">
+                <h3>{{ datosPerfil.usuario.nombre_real }}</h3>
+                <span v-if="esMiembroActivo" class="badge badge--activa">Miembro Activo</span>
+              </div>
               <p class="perfil-username">@{{ datosPerfil.usuario.username }}</p>
               <p class="perfil-email">{{ datosPerfil.usuario.email }}</p>
             </div>
@@ -48,16 +51,51 @@
           </div>
 
           <div class="perfil-seccion">
-            <h4>📋 Publicaciones Activas ({{ datosPerfil.cantidad_publicaciones }})</h4>
-            <div v-if="datosPerfil.publicaciones.length === 0" class="empty-state">
+            <h4>Publicaciones Activas ({{ publicacionesActivas.length }})</h4>
+            <div v-if="publicacionesActivas.length === 0" class="empty-state">
               No tienes publicaciones activas
             </div>
             <div v-else class="publicaciones-lista">
-              <div v-for="pub in datosPerfil.publicaciones" :key="pub.id" class="publicacion-item">
+              <div
+                v-for="pub in publicacionesActivas"
+                :key="pub.id"
+                class="publicacion-item"
+              >
                 <div class="publicacion-tipo" :class="'publicacion-tipo--' + pub.tipo.toLowerCase()">
-                  {{ pub.tipo === 'TALENTO' ? ' Talento' : ' Necesidad' }}
+                  {{ pub.tipo === 'TALENTO' ? 'Talento' : 'Necesidad' }}
                 </div>
                 <div class="publicacion-info">
+                  <div class="publicacion-estado">
+                    <span class="estado-badge estado-badge--activa">Activa</span>
+                  </div>
+                  <h5>{{ pub.titulo }}</h5>
+                  <p>{{ pub.descripcion }}</p>
+                  <div class="publicacion-meta">
+                    <span class="categoria">{{ pub.categoria }}</span>
+                    <span class="urgencia" :class="'urgencia--' + pub.urgencia.toLowerCase()">
+                      {{ pub.urgencia }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="publicacionesPausadas.length" class="perfil-seccion">
+            <h4>Publicaciones Pausadas ({{ publicacionesPausadas.length }})</h4>
+            <div class="publicaciones-lista">
+              <div
+                v-for="pub in publicacionesPausadas"
+                :key="pub.id"
+                class="publicacion-item publicacion-item--pausada"
+              >
+                <div class="publicacion-tipo" :class="'publicacion-tipo--' + pub.tipo.toLowerCase()">
+                  {{ pub.tipo === 'TALENTO' ? 'Talento' : 'Necesidad' }}
+                </div>
+                <div class="publicacion-info">
+                  <div class="publicacion-estado">
+                    <span class="estado-badge estado-badge--pausada">Pausada</span>
+                  </div>
                   <h5>{{ pub.titulo }}</h5>
                   <p>{{ pub.descripcion }}</p>
                   <div class="publicacion-meta">
@@ -107,12 +145,38 @@
 </template>
 
 <script setup>
-import { inject, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
 
 const userController = inject('userController')
 const datosPerfil = ref(null)
 const cargando = ref(true)
 const error = ref('')
+
+const publicacionesActivas = computed(() => {
+  if (!datosPerfil.value) return []
+  if (Array.isArray(datosPerfil.value.publicaciones_activas)) {
+    return datosPerfil.value.publicaciones_activas
+  }
+  return (datosPerfil.value.publicaciones || []).filter((pub) => pub.esta_activa)
+})
+
+const publicacionesPausadas = computed(() => {
+  if (!datosPerfil.value) return []
+  if (Array.isArray(datosPerfil.value.publicaciones_pausadas)) {
+    return datosPerfil.value.publicaciones_pausadas
+  }
+  return (datosPerfil.value.publicaciones || []).filter((pub) => !pub.esta_activa)
+})
+
+const esMiembroActivo = computed(() => {
+  if (!datosPerfil.value) return false
+  if (typeof datosPerfil.value.es_miembro_activo === 'boolean') {
+    return datosPerfil.value.es_miembro_activo
+  }
+  const usuario = datosPerfil.value.usuario
+  const publicaciones = datosPerfil.value.publicaciones || []
+  return Boolean(usuario?.nombre_real?.trim() && publicaciones.length > 0)
+})
 
 const cargarPerfil = async () => {
   try {
@@ -180,8 +244,16 @@ onMounted(cargarPerfil)
   flex-shrink: 0;
 }
 
+.perfil-nombre-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.25rem;
+}
+
 .perfil-datos-principales h3 {
-  margin: 0 0 0.25rem 0;
+  margin: 0;
   font-size: 1.2rem;
   color: #333;
 }
@@ -265,6 +337,34 @@ onMounted(cargarPerfil)
   border-radius: 6px;
   border-left: 4px solid #667eea;
   font-size: 0.9rem;
+}
+
+.publicacion-item--pausada {
+  opacity: 0.72;
+  border-left-color: #adb5bd;
+  background: #f1f3f5;
+}
+
+.publicacion-estado {
+  margin-bottom: 0.35rem;
+}
+
+.estado-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.estado-badge--activa {
+  background: #e7f7f1;
+  color: #175f49;
+}
+
+.estado-badge--pausada {
+  background: #e9ecef;
+  color: #5f6b7a;
 }
 
 .publicacion-tipo {

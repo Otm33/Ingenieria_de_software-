@@ -105,16 +105,27 @@
       </div>
       <div class="panel__body">
         <div v-if="cargandoMisPublicaciones" class="loading-state">Cargando mis publicaciones...</div>
-        <div v-else-if="misPublicaciones.length" class="service-grid">
+        <template v-else>
+          <p
+            v-if="feedbackEstadoPublicacion"
+            :class="['alert', feedbackEstadoExitoso ? 'alert--success' : 'alert--error']"
+          >
+            {{ feedbackEstadoPublicacion }}
+          </p>
+
+          <div v-if="misPublicaciones.length" class="service-grid">
           <article
             v-for="pub in misPublicaciones"
             :key="pub.id"
-            :class="['service-card', clasePorUrgencia(pub.urgencia)]"
+            :class="['service-card', clasePorUrgencia(pub.urgencia), { 'service-card--pausada': !pub.esta_activa }]"
           >
             <div class="service-card__top">
               <div>
                 <span :class="['badge', pub.tipo === 'TALENTO' ? 'badge--talento' : 'badge--necesidad']">
                   {{ etiquetaTipo(pub.tipo) }}
+                </span>
+                <span :class="['badge', pub.esta_activa ? 'badge--activa' : 'badge--pausada']">
+                  {{ pub.esta_activa ? 'Activa' : 'Pausada' }}
                 </span>
                 <h3 class="service-card__title">{{ pub.titulo }}</h3>
               </div>
@@ -123,15 +134,25 @@
             <p class="service-card__description">{{ pub.descripcion }}</p>
             <div class="service-card__footer">
               <span>{{ pub.categoria }}</span>
-              <button class="button button--small button--danger" type="button" @click="eliminarPublicacion(pub.id)">
-                Eliminar
+              <button
+                :class="['button', 'button--small', pub.esta_activa ? 'button--secondary' : 'button--primary']"
+                type="button"
+                :disabled="procesandoEstadoId === pub.id"
+                @click="actualizarEstadoPublicacion(pub)"
+              >
+                {{
+                  procesandoEstadoId === pub.id
+                    ? 'Procesando...'
+                    : (pub.esta_activa ? 'Pausar' : 'Reactivar')
+                }}
               </button>
             </div>
           </article>
-        </div>
-        <div v-if="!cargandoMisPublicaciones && misPublicaciones.length === 0" class="empty-state">
-          No tienes publicaciones activas.
-        </div>
+          </div>
+          <div v-else class="empty-state">
+            No tienes publicaciones.
+          </div>
+        </template>
       </div>
     </section>
 
@@ -331,6 +352,9 @@ const errorFiltro = ref('');
 const publicando = ref(false);
 const feedbackPublicacion = ref('');
 const publicacionExitosa = ref(false);
+const feedbackEstadoPublicacion = ref('');
+const feedbackEstadoExitoso = ref(false);
+const procesandoEstadoId = ref(null);
 const buscandoMatch = ref(false);
 const resultadoMatch = ref(null);
 const mostrarModalMatch = ref(false);
@@ -354,29 +378,15 @@ watch(() => formPublicacion.categoria, () => {
 });
 
 const cargarMisPublicaciones = async () => {
-  console.log('=== Cargar mis publicaciones ===');
-  console.log('modoPublicar.value:', modoPublicar.value);
-  
   if (!modoPublicar.value) {
-    console.log('No está en modo publicación, retornando');
     return;
   }
-  
+
   cargandoMisPublicaciones.value = true;
   try {
-    console.log('Llamando a userController.obtenerMisPublicaciones()');
     const resultado = await userController.obtenerMisPublicaciones();
-    console.log('Resultado recibido:', resultado);
-    
-    if (!resultado || !Array.isArray(resultado)) {
-      console.error('El endpoint no devolvió un array válido:', resultado);
-      misPublicaciones.value = [];
-    } else {
-      misPublicaciones.value = resultado;
-      console.log('✅ Mis publicaciones cargadas correctamente:', misPublicaciones.value.length);
-    }
-  } catch (err) {
-    console.error('❌ Error al cargar mis publicaciones:', err);
+    misPublicaciones.value = Array.isArray(resultado) ? resultado : [];
+  } catch {
     misPublicaciones.value = [];
   } finally {
     cargandoMisPublicaciones.value = false;
@@ -384,7 +394,6 @@ const cargarMisPublicaciones = async () => {
 };
 
 watch(() => props.modoPublicar, (nuevoValor) => {
-  console.log('modoPublicar cambió a:', nuevoValor);
   if (nuevoValor) {
     cargarMisPublicaciones();
   }
@@ -434,20 +443,32 @@ const volverACartelera = () => {
   emit('volver-cartelera');
 };
 
-const eliminarPublicacion = async (publicacionId) => {
-  if (!confirm('¿Estás seguro de que quieres eliminar esta publicación?')) {
+const actualizarEstadoPublicacion = async (publicacion) => {
+  const reactivar = !publicacion.esta_activa;
+  const mensajeConfirmacion = reactivar
+    ? '¿Deseas reactivar esta publicación? Volverá a aparecer en la cartelera pública.'
+    : '¿Deseas pausar esta publicación? Dejará de aparecer en la cartelera pública.';
+
+  if (!confirm(mensajeConfirmacion)) {
     return;
   }
-  
+
+  procesandoEstadoId.value = publicacion.id;
+  feedbackEstadoPublicacion.value = '';
+  feedbackEstadoExitoso.value = false;
+
   try {
-    // Necesitarías agregar este método al backend para eliminar publicaciones
-    // Por ahora solo lo eliminamos de la lista local
-    misPublicaciones.value = misPublicaciones.value.filter(pub => pub.id !== publicacionId);
-    
-    // También actualizar la lista general si está cargada
-    publicaciones.value = publicaciones.value.filter(pub => pub.id !== publicacionId);
+    await userController.actualizarEstadoPublicacion(publicacion.id, reactivar);
+    feedbackEstadoExitoso.value = true;
+    feedbackEstadoPublicacion.value = reactivar
+      ? 'Publicación reactivada correctamente.'
+      : 'Publicación pausada correctamente.';
+    await cargarMisPublicaciones();
+    await obtenerPublicaciones(false);
   } catch (err) {
-    console.error('Error al eliminar publicación:', err);
+    feedbackEstadoPublicacion.value = err.message || 'No se pudo actualizar el estado de la publicación.';
+  } finally {
+    procesandoEstadoId.value = null;
   }
 };
 
@@ -459,7 +480,7 @@ const publicarServicio = async () => {
   try {
     const nuevaPublicacion = await userController.crearPublicacion({ ...formPublicacion });
     publicacionExitosa.value = true;
-    feedbackPublicacion.value = 'Publicacion creada correctamente.';
+    feedbackPublicacion.value = 'Publicación creada correctamente.';
     
     // Recargar mis publicaciones si estamos en modo publicación
     if (modoPublicar) {
@@ -469,7 +490,7 @@ const publicarServicio = async () => {
     limpiarPublicacion();
     await obtenerPublicaciones(false);
   } catch (err) {
-    feedbackPublicacion.value = err.message || 'No se pudo crear la publicacion.';
+    feedbackPublicacion.value = err.message || 'No se pudo crear la publicación.';
   } finally {
     publicando.value = false;
   }
@@ -502,10 +523,7 @@ const buscarMatchPorPublicacion = async (publicacionId) => {
   publicacionSeleccionada.value = publicacionId;
   
   try {
-    console.log('Verificando coincidencia para publicación ID:', publicacionId);
     const resultado = await userController.verificarCoincidenciaPorTitulo(publicacionId);
-    console.log('Resultado de verificación:', resultado);
-    
     verificacionCoincidencia.value = resultado;
     
     if (resultado.tiene_coincidencia) {
@@ -526,7 +544,6 @@ const buscarMatchPorPublicacion = async (publicacionId) => {
       };
     }
   } catch (err) {
-    console.error('Error al verificar coincidencia:', err);
     resultadoMatch.value = {
       encontrado: false,
       mensaje: 'Error al verificar coincidencia: ' + (err.message || 'Error desconocido')
@@ -552,45 +569,33 @@ const cancelarConfirmacion = () => {
 
 const confirmarPropuesta = async () => {
   try {
-    console.log('Confirmando propuesta para publicación ID:', publicacionSeleccionada.value);
-    
-    // Aquí implementar la lógica para enviar la notificación al usuario A
     alert('Propuesta enviada al usuario A. Ahora aparecerá en su cartelera como notificación prioritaria.');
     
     mostrandoConfirmacion.value = false;
     resultadoMatch.value = null;
     verificacionCoincidencia.value = null;
   } catch (err) {
-    console.error('Error al confirmar propuesta:', err);
     alert('Error al confirmar propuesta: ' + (err.message || 'Error desconocido'));
   }
 };
 
 const iniciarTrueque = async (usuarioId) => {
   try {
-    console.log('Iniciando trueque con usuario:', usuarioId);
-    // Aquí podrías agregar la lógica para crear una propuesta de trueque
     alert('Funcionalidad de iniciar trueque será implementada próximamente. Usuario ID: ' + usuarioId);
     cerrarModalMatch();
   } catch (err) {
-    console.error('Error al iniciar trueque:', err);
     alert('Error al iniciar trueque: ' + (err.message || 'Error desconocido'));
   }
 };
 
 onMounted(async () => {
-  console.log('Cartelera montado, modoPublicar.value:', modoPublicar.value);
-  
-  // Obtener el ID del usuario actual
   const sesion = await userController.obtenerSesionActual();
   if (sesion) {
     usuarioActualId.value = sesion.id;
-    console.log('Usuario actual ID:', usuarioActualId.value);
   }
-  
+
   await obtenerPublicaciones(false);
   if (modoPublicar.value) {
-    console.log('Cargando mis publicaciones al montar porque está en modo publicación');
     await cargarMisPublicaciones();
   }
 });

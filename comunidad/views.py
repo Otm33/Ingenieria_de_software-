@@ -6,6 +6,8 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ValidationError
 
+from .models import Publicacion, Usuario
+from .repositories import PublicacionRepository, ResenaRepository, UsuarioRepository
 from .serializers import PublicacionSerializer, UsuarioSerializer, ResenaSerializer
 from .services import (
     BusinessError,
@@ -28,6 +30,11 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 
 def manejar_error(error):
     return Response({"error": error.message}, status=error.status_code)
+
+
+def es_miembro_activo(usuario):
+    nombre = (usuario.nombre_real or "").strip()
+    return bool(nombre and Publicacion.objects.filter(usuario=usuario).exists())
 
 
 class CargarUsuariosCSVView(APIView):
@@ -64,6 +71,22 @@ class RegistroUsuarioView(APIView):
         try:
             usuario = self.servicio.registrar_usuario(request.data)
             return Response(UsuarioSerializer(usuario).data, status=status.HTTP_201_CREATED)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class ValidarEmailRegistroView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or RegistroUsuarioService()
+
+    def post(self, request):
+        try:
+            self.servicio.validar_email(request.data)
+            return Response({"autorizado": True}, status=status.HTTP_200_OK)
         except BusinessError as error:
             return manejar_error(error)
 
@@ -138,6 +161,36 @@ class CrearPublicacionView(APIView):
         try:
             publicacion = self.servicio.crear_publicacion(request.user, request.data)
             return Response(PublicacionSerializer(publicacion).data, status=status.HTTP_201_CREATED)
+        except BusinessError as error:
+            return manejar_error(error)
+        except ValidationError as error:
+            mensaje = "; ".join(error.messages) if hasattr(error, "messages") else str(error)
+            return Response({"error": mensaje}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ActualizarPublicacionView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or PublicacionService()
+
+    def patch(self, request, publicacion_id):
+        esta_activa = request.data.get("esta_activa")
+        if esta_activa is None or not isinstance(esta_activa, bool):
+            return Response(
+                {"error": "El campo 'esta_activa' es obligatorio y debe ser booleano."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            publicacion = self.servicio.actualizar_estado_publicacion(
+                request.user,
+                publicacion_id,
+                esta_activa,
+            )
+            return Response(PublicacionSerializer(publicacion).data, status=status.HTTP_200_OK)
         except BusinessError as error:
             return manejar_error(error)
         except ValidationError as error:
@@ -297,32 +350,26 @@ class VerPerfilUsuarioView(APIView):
 
     def get(self, request, usuario_id):
         try:
-            from .repositories import UsuarioRepository
             usuario_repository = UsuarioRepository()
-            usuario = usuario_repository.obtener_por_id(usuario_id)
-            
-            serializer = UsuarioSerializer(usuario)
-            
-            # Obtener publicaciones del usuario
-            from .repositories import PublicacionRepository
             publicacion_repository = PublicacionRepository()
-            publicaciones = Publicacion.objects.filter(usuario=usuario, esta_activa=True)
-            publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
-            
-            # Obtener reseñas del usuario
-            from .repositories import ResenaRepository
             resena_repository = ResenaRepository()
+
+            usuario = usuario_repository.obtener_por_id(usuario_id)
+            publicaciones_activas = publicacion_repository.listar_por_usuario(usuario, solo_activas=True)
+            publicaciones_data = PublicacionSerializer(publicaciones_activas, many=True).data
             resenas_recibidas = resena_repository.listar_por_calificado(usuario)
             resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
-            
+
             return Response({
-                "usuario": serializer.data,
+                "usuario": UsuarioSerializer(usuario).data,
+                "nombre_real": usuario.nombre_real,
+                "promedio_estrellas": usuario.promedio_estrellas,
                 "publicaciones": publicaciones_data,
                 "resenas": resenas_data,
                 "cantidad_publicaciones": len(publicaciones_data),
-                "cantidad_resenas": len(resenas_data)
+                "cantidad_resenas": len(resenas_data),
             }, status=status.HTTP_200_OK)
-            
+
         except Exception as error:
             return Response(
                 {"error": f"Error al obtener perfil: {str(error)}"},
@@ -375,36 +422,32 @@ class VerMiPerfilView(APIView):
 
     def get(self, request):
         try:
-            from .repositories import UsuarioRepository, PublicacionRepository, ResenaRepository
-            from .models import Publicacion
-            usuario_repository = UsuarioRepository()
+            from .models import AcuerdoTrueque
+
             publicacion_repository = PublicacionRepository()
             resena_repository = ResenaRepository()
-            
-            serializer = UsuarioSerializer(request.user)
-            
-            # Obtener publicaciones del usuario
-            publicaciones = Publicacion.objects.filter(usuario=request.user, esta_activa=True)
-            publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
-            
-            # Obtener reseñas recibidas
+
+            publicaciones = publicacion_repository.listar_por_usuario(request.user)
+            publicaciones_activas = [publicacion for publicacion in publicaciones if publicacion.esta_activa]
+            publicaciones_pausadas = [publicacion for publicacion in publicaciones if not publicacion.esta_activa]
+
             resenas_recibidas = resena_repository.listar_por_calificado(request.user)
-            resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
-            
-            # Obtener trueques del usuario
-            from .models import AcuerdoTrueque
             trueques_enviados = AcuerdoTrueque.objects.filter(emisor=request.user)
             trueques_recibidos = AcuerdoTrueque.objects.filter(receptor=request.user)
-            
+
             return Response({
-                "usuario": serializer.data,
-                "publicaciones": publicaciones_data,
-                "resenas_recibidas": resenas_data,
+                "usuario": UsuarioSerializer(request.user).data,
+                "publicaciones": PublicacionSerializer(publicaciones, many=True).data,
+                "publicaciones_activas": PublicacionSerializer(publicaciones_activas, many=True).data,
+                "publicaciones_pausadas": PublicacionSerializer(publicaciones_pausadas, many=True).data,
+                "resenas_recibidas": ResenaSerializer(resenas_recibidas, many=True).data,
                 "trueques_enviados_count": trueques_enviados.count(),
                 "trueques_recibidos_count": trueques_recibidos.count(),
-                "saldo_comercial": float(request.user.saldo_comercial)
+                "saldo_comercial": float(request.user.saldo_comercial),
+                "es_miembro_activo": es_miembro_activo(request.user),
+                "cantidad_publicaciones_pausadas": len(publicaciones_pausadas),
             }, status=status.HTTP_200_OK)
-            
+
         except Exception as error:
             return Response(
                 {"error": f"Error al obtener mi perfil: {str(error)}"},
@@ -414,27 +457,58 @@ class VerMiPerfilView(APIView):
 
 class MisPublicacionesView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         try:
-            from .models import Publicacion
-            # Obtener solo las publicaciones del usuario actual
-            print(f"Usuario actual: {request.user.username}, ID: {request.user.id}")
-            publicaciones = Publicacion.objects.filter(usuario=request.user, esta_activa=True)
-            print(f"Publicaciones encontradas: {publicaciones.count()}")
+            publicacion_repository = PublicacionRepository()
+            publicaciones = publicacion_repository.listar_por_usuario(request.user)
             publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
-            
+
             return Response({
                 "publicaciones": publicaciones_data,
-                "cantidad": len(publicaciones_data)
+                "cantidad": len(publicaciones_data),
             }, status=status.HTTP_200_OK)
-            
+
         except Exception as error:
-            print(f"Error en MisPublicacionesView: {str(error)}")
             return Response(
                 {"error": f"Error al obtener mis publicaciones: {str(error)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class DirectorioComunidadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        publicacion_repository = PublicacionRepository()
+        miembros = Usuario.objects.filter(
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        ).order_by("nombre_real", "username")
+
+        directorio = []
+        for miembro in miembros:
+            publicaciones = publicacion_repository.listar_por_usuario(miembro)
+            talentos_activos = [
+                publicacion for publicacion in publicaciones
+                if publicacion.tipo == "TALENTO" and publicacion.esta_activa
+            ]
+
+            directorio.append({
+                "id": miembro.id,
+                "nombre_real": miembro.nombre_real,
+                "username": miembro.username,
+                "promedio_estrellas": miembro.promedio_estrellas,
+                "talentos_principales": [publicacion.titulo for publicacion in talentos_activos[:3]],
+                "cantidad_talentos": len(talentos_activos),
+                "es_miembro_activo": es_miembro_activo(miembro),
+            })
+
+        return Response({
+            "miembros": directorio,
+            "cantidad": len(directorio),
+        }, status=status.HTTP_200_OK)
 
 
 class NotificacionesView(APIView):

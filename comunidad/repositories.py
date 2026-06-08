@@ -49,6 +49,21 @@ class PublicacionRepository:
     def crear(self, usuario, datos):
         return Publicacion.objects.create(usuario=usuario, **datos)
 
+    def obtener_por_id(self, publicacion_id):
+        return Publicacion.objects.get(id=publicacion_id)
+
+    def obtener_por_id_y_usuario(self, publicacion_id, usuario):
+        return Publicacion.objects.get(id=publicacion_id, usuario=usuario)
+
+    def listar_por_usuario(self, usuario, solo_activas=False):
+        queryset = Publicacion.objects.filter(usuario=usuario)
+        if solo_activas:
+            queryset = queryset.filter(esta_activa=True)
+        return list(queryset.order_by("-id"))
+
+    def contar_activas_por_tipo(self, usuario, tipo):
+        return Publicacion.objects.filter(usuario=usuario, tipo=tipo, esta_activa=True).count()
+
     def obtener_cartelera(self, categoria=None, urgencia=None):
         queryset = Publicacion.objects.filter(esta_activa=True)
 

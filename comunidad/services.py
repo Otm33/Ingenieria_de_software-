@@ -23,6 +23,7 @@ from .repositories import (
     UsuarioAutorizadoRepository,
     UsuarioRepository,
 )
+from .validators import contiene_palabra_prohibida
 
 CATEGORIAS_PUBLICACION = {
     "Mantenimiento, Reparaciones y Construcción",
@@ -123,20 +124,31 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
         self.autorizados_repository = autorizados_repository or UsuarioAutorizadoRepository()
         self.usuario_repository = usuario_repository or UsuarioRepository()
 
+    def validar_email(self, datos):
+        email = datos.get("email")
+        es_comercio = bool(datos.get("es_comercio", False))
+        tipo_autorizado = "COMERCIO" if es_comercio else "USUARIO"
+
+        if not email:
+            raise BusinessError("Faltan datos obligatorios.")
+
+        if not self.autorizados_repository.existe_email(email, tipo_autorizado):
+            mensaje = "Comercio no autorizado para esta comunidad." if es_comercio else "Usuario no autorizado para esta comunidad."
+            raise BusinessError(mensaje, status_code=403)
+
+        return True
+
     def registrar_usuario(self, datos):
         email = datos.get("email")
         username = datos.get("username")
         password = datos.get("password")
         nombre_real = datos.get("nombre_real")
         es_comercio = bool(datos.get("es_comercio", False))
-        tipo_autorizado = "COMERCIO" if es_comercio else "USUARIO"
 
         if not all([email, username, password, nombre_real]):
             raise BusinessError("Faltan datos obligatorios.")
 
-        if not self.autorizados_repository.existe_email(email, tipo_autorizado):
-            mensaje = "Comercio no autorizado para esta comunidad." if es_comercio else "Usuario no autorizado para esta comunidad."
-            raise BusinessError(mensaje, status_code=403)
+        self.validar_email({"email": email, "es_comercio": es_comercio})
 
         if self.usuario_repository.existe_username(username):
             raise BusinessError("El username ya esta en uso.")
@@ -167,6 +179,9 @@ class PublicacionService:
         if urgencia not in ["NORMAL", "ALTA", "CRITICA"]:
             raise BusinessError("La urgencia seleccionada no es valida.")
 
+        if contiene_palabra_prohibida(titulo) or contiene_palabra_prohibida(descripcion):
+            raise BusinessError("La publicación contiene palabras no permitidas.")
+
         return self.publicacion_repository.crear(usuario, {
             "tipo": tipo,
             "titulo": titulo,
@@ -174,6 +189,35 @@ class PublicacionService:
             "categoria": categoria,
             "urgencia": urgencia,
         })
+
+    def pausar_publicacion(self, usuario, publicacion_id):
+        return self.actualizar_estado_publicacion(usuario, publicacion_id, esta_activa=False)
+
+    def reactivar_publicacion(self, usuario, publicacion_id):
+        return self.actualizar_estado_publicacion(usuario, publicacion_id, esta_activa=True)
+
+    def actualizar_estado_publicacion(self, usuario, publicacion_id, esta_activa):
+        from .models import Publicacion
+
+        if usuario.horas_de_vida < -10:
+            raise BusinessError("Saldo crítico inferior a -10 horas. No puedes modificar ofertas.")
+
+        try:
+            publicacion = self.publicacion_repository.obtener_por_id_y_usuario(publicacion_id, usuario)
+        except Publicacion.DoesNotExist:
+            raise BusinessError("Publicación no encontrada.", status_code=404)
+
+        # Solo validar limites cuando se re-activan publicaciones
+        if esta_activa and not publicacion.esta_activa:
+            conteo_activas = self.publicacion_repository.contar_activas_por_tipo(usuario, publicacion.tipo)
+            if publicacion.tipo == "TALENTO" and conteo_activas >= 5:
+                raise BusinessError("No puedes tener más de 5 talentos activos publicados simultáneamente.")
+            if publicacion.tipo == "NECESIDAD" and conteo_activas >= 3:
+                raise BusinessError("No puedes tener más de 3 necesidades activas simultáneamente.")
+
+        publicacion.esta_activa = esta_activa
+        publicacion.save(update_fields=["esta_activa"])
+        return publicacion
 
 
 class CarteleraService(CarteleraInterface):
