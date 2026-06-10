@@ -65,3 +65,7 @@ class MatchmakingInterface(ABC):
     @abstractmethod
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
         pass
+
+    @abstractmethod
+    def detectar_y_notificar_matches(self, usuario):
+        pass

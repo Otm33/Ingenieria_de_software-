@@ -30,7 +30,7 @@
             <div class="estadistica-card">
               <div class="estadistica-icon">ESTRELLAS</div>
               <div class="estadistica-info">
-                <div class="estadistica-valor">{{ datosPerfil.usuario.promedio_estrellas.toFixed(1) }}</div>
+                <div class="estadistica-valor">{{ promedioEstrellas.toFixed(1) }}</div>
                 <div class="estadistica-label">Calificación</div>
               </div>
             </div>
@@ -39,13 +39,6 @@
               <div class="estadistica-info">
                 <div class="estadistica-valor">{{ datosPerfil.usuario.horas_de_vida.toFixed(1) }}</div>
                 <div class="estadistica-label">Horas de Vida</div>
-              </div>
-            </div>
-            <div class="estadistica-card">
-              <div class="estadistica-icon">DINERO</div>
-              <div class="estadistica-info">
-                <div class="estadistica-valor">${{ datosPerfil.saldo_comercial.toFixed(2) }}</div>
-                <div class="estadistica-label">Saldo Comercial</div>
               </div>
             </div>
           </div>
@@ -110,7 +103,7 @@
           </div>
 
           <div class="perfil-seccion">
-            <h4>⭐ Reseñas Recibidas ({{ datosPerfil?.cantidad_resenas || 0 }})</h4>
+            <h4>⭐ Reseñas Recibidas ({{ cantidadResenas }})</h4>
             <div v-if="!datosPerfil?.resenas_recibidas || datosPerfil.resenas_recibidas.length === 0" class="empty-state">
               No has recibido reseñas aún
             </div>
@@ -118,7 +111,7 @@
               <div v-for="resena in datosPerfil.resenas_recibidas" :key="resena.id" class="resena-item">
                 <div class="resena-calificacion">
                   <span class="estrellas">{{ '⭐'.repeat(resena.estrellas) }}</span>
-                  <span class="calificador">por @{{ resena.calificador?.username || 'usuario' }}</span>
+                  <span class="calificador">por @{{ nombreCalificador(resena) }}</span>
                 </div>
                 <p class="resena-comentario">{{ resena.comentario }}</p>
               </div>
@@ -126,7 +119,78 @@
           </div>
 
           <div class="perfil-seccion">
-            <h4> Actividad de Trueques</h4>
+            <h4>Mis trueques ({{ misTrueques.length }})</h4>
+            <div v-if="cargandoTrueques" class="loading-state">Cargando trueques...</div>
+            <div v-else-if="!misTrueques.length" class="empty-state">
+              No tienes acuerdos de trueque registrados.
+            </div>
+            <div v-else class="trueques-grid">
+              <article v-for="trueque in misTrueques" :key="trueque.id" class="trueque-card">
+                <div class="trueque-card__header">
+                  <strong>{{ nombreContraparte(trueque) }}</strong>
+                  <span :class="['trueque-card__estado', claseEstado(trueque.estado)]">
+                    {{ trueque.estado }}
+                  </span>
+                </div>
+                <div class="trueque-card__pubs">
+                  <span v-if="trueque.es_intercambio_mutuo" class="trueque-mutuo-badge">
+                    Intercambio equilibrado (0 horas netas)
+                  </span>
+                  <span v-if="etiquetaOfertaPropia(trueque)">
+                    {{ etiquetaOfertaPropia(trueque) }}: {{ tituloOfertaPropia(trueque) }}
+                  </span>
+                  <span v-if="etiquetaOfertaContraparte(trueque)">
+                    {{ etiquetaOfertaContraparte(trueque) }}: {{ tituloOfertaContraparte(trueque) }}
+                  </span>
+                  <span
+                    v-if="!trueque.es_intercambio_mutuo && trueque.impacto_horas"
+                    class="trueque-impacto"
+                  >
+                    Impacto en tus horas: {{ formatearImpacto(trueque.impacto_horas) }}
+                  </span>
+                </div>
+                <p v-if="mensajeEspera(trueque)" class="trueque-espera">
+                  {{ mensajeEspera(trueque) }}
+                </p>
+                <div class="trueque-card__actions">
+                  <button
+                    v-if="trueque.estado === 'PENDIENTE'"
+                    class="button button--primary button--small"
+                    type="button"
+                    @click="completarPropuesta(trueque)"
+                  >
+                    {{ etiquetaPropuestaPendiente(trueque) }}
+                  </button>
+                  <button
+                    v-if="trueque.puede_confirmar"
+                    class="button button--primary button--small"
+                    type="button"
+                    :disabled="procesandoTruequeId === trueque.id"
+                    @click="confirmarFinalizacion(trueque)"
+                  >
+                    Confirmar finalización
+                  </button>
+                  <button
+                    v-if="trueque.pendiente_resena"
+                    class="button button--secondary button--small"
+                    type="button"
+                    @click="abrirResena(trueque)"
+                  >
+                    Dejar reseña
+                  </button>
+                </div>
+                <p
+                  v-if="feedbackTrueque[trueque.id]"
+                  :class="['alert', feedbackTruequeOk[trueque.id] ? 'alert--success' : 'alert--error']"
+                >
+                  {{ feedbackTrueque[trueque.id] }}
+                </p>
+              </article>
+            </div>
+          </div>
+
+          <div class="perfil-seccion">
+            <h4>Actividad de Trueques</h4>
             <div class="trueques-info">
               <div class="trueque-stat">
                 <span class="trueque-label">Propuestas enviadas:</span>
@@ -145,12 +209,19 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 const userController = inject('userController')
+const hu4 = inject('hu4', null)
 const datosPerfil = ref(null)
 const cargando = ref(true)
 const error = ref('')
+const misTrueques = ref([])
+const cargandoTrueques = ref(false)
+const procesandoTruequeId = ref(null)
+const feedbackTrueque = reactive({})
+const feedbackTruequeOk = reactive({})
+const usuarioActualId = ref(null)
 
 const publicacionesActivas = computed(() => {
   if (!datosPerfil.value) return []
@@ -178,15 +249,152 @@ const esMiembroActivo = computed(() => {
   return Boolean(usuario?.nombre_real?.trim() && publicaciones.length > 0)
 })
 
+const promedioEstrellas = computed(() => {
+  if (!datosPerfil.value) return 5.0
+  return datosPerfil.value.promedio_estrellas
+    ?? datosPerfil.value.usuario?.promedio_estrellas
+    ?? 5.0
+})
+
+const cantidadResenas = computed(() => {
+  if (!datosPerfil.value) return 0
+  if (typeof datosPerfil.value.cantidad_resenas === 'number') {
+    return datosPerfil.value.cantidad_resenas
+  }
+  return datosPerfil.value.resenas_recibidas?.length ?? 0
+})
+
+const nombreCalificador = (resena) => {
+  if (resena.calificador_username) return resena.calificador_username
+  if (resena.calificador?.username) return resena.calificador.username
+  if (resena.calificador_nombre) return resena.calificador_nombre
+  return 'usuario'
+}
+
 const cargarPerfil = async () => {
   try {
-    // Usar el patrón del proyecto - agregar el método al UserController
     const response = await userController.obtenerMiPerfil()
     datosPerfil.value = response
   } catch (err) {
     error.value = 'Error al cargar el perfil: ' + (err.message || 'Error desconocido')
   } finally {
     cargando.value = false
+  }
+}
+
+const cargarMisTrueques = async () => {
+  cargandoTrueques.value = true
+  try {
+    const data = await userController.obtenerMisTrueques()
+    misTrueques.value = data.trueques || []
+  } catch {
+    misTrueques.value = []
+  } finally {
+    cargandoTrueques.value = false
+  }
+}
+
+const nombreContraparte = (trueque) => {
+  if (Number(trueque.emisor) === Number(usuarioActualId.value)) return trueque.receptor_nombre
+  return trueque.emisor_nombre
+}
+
+const tituloOfertaPropia = (trueque) => (
+  trueque.oferta_propia_titulo
+  || (Number(trueque.emisor) === Number(usuarioActualId.value)
+    ? trueque.publicacion_emisor?.titulo
+    : trueque.publicacion_receptor?.titulo)
+  || ''
+)
+
+const tituloOfertaContraparte = (trueque) => (
+  trueque.oferta_contraparte_titulo
+  || (Number(trueque.emisor) === Number(usuarioActualId.value)
+    ? trueque.publicacion_receptor?.titulo
+    : trueque.publicacion_emisor?.titulo)
+  || ''
+)
+
+const etiquetaOfertaPropia = (trueque) => (trueque.es_intercambio_mutuo ? 'Yo ofrezco' : 'Ofrezco')
+
+const etiquetaOfertaContraparte = (trueque) => (
+  trueque.es_intercambio_mutuo ? 'Recibo de contraparte' : 'Solicito'
+)
+
+const formatearImpacto = (impacto) => {
+  if (impacto > 0) return `+${impacto.toFixed(1)} h`
+  if (impacto < 0) return `${impacto.toFixed(1)} h`
+  return '0 h'
+}
+
+const claseEstado = (estado) => {
+  const mapa = {
+    ACEPTADO: 'trueque-card__estado--aceptado',
+    FINALIZADO: 'trueque-card__estado--finalizado',
+    RECHAZADO: 'trueque-card__estado--rechazado',
+    PENDIENTE: 'trueque-card__estado--pendiente',
+  }
+  return mapa[estado] || 'trueque-card__estado--pendiente'
+}
+
+const mensajeEspera = (trueque) => {
+  if (trueque.estado !== 'ACEPTADO') return ''
+  if (trueque.emisor === usuarioActualId.value && trueque.emisor_confirmado && !trueque.receptor_confirmado) {
+    return `Esperando confirmación de ${trueque.receptor_nombre}`
+  }
+  if (trueque.receptor === usuarioActualId.value && trueque.receptor_confirmado && !trueque.emisor_confirmado) {
+    return `Esperando confirmación de ${trueque.emisor_nombre}`
+  }
+  return ''
+}
+
+const confirmarFinalizacion = async (trueque) => {
+  procesandoTruequeId.value = trueque.id
+  feedbackTrueque[trueque.id] = ''
+  feedbackTruequeOk[trueque.id] = false
+
+  try {
+    const resultado = await userController.finalizarTrueque(trueque.id)
+    feedbackTruequeOk[trueque.id] = true
+    feedbackTrueque[trueque.id] = resultado.message || 'Confirmación registrada.'
+    await cargarPerfil()
+
+    if (resultado.habilitar_resena) {
+      await cargarMisTrueques()
+      const truequeActualizado = misTrueques.value.find((item) => item.id === trueque.id)
+      if (truequeActualizado?.pendiente_resena && hu4?.abrirModalResenaPrioritario) {
+        hu4.abrirModalResenaPrioritario(truequeActualizado)
+      }
+    } else {
+      await cargarMisTrueques()
+    }
+
+    if (hu4?.refrescarDatosHu4) {
+      await hu4.refrescarDatosHu4({ omitirModalesAutomaticos: resultado.habilitar_resena })
+    }
+  } catch (err) {
+    feedbackTrueque[trueque.id] = err.message || 'No se pudo confirmar el trueque.'
+  } finally {
+    procesandoTruequeId.value = null
+  }
+}
+
+const abrirResena = (trueque) => {
+  if (hu4?.abrirModalResena) {
+    hu4.abrirModalResena(trueque)
+  }
+}
+
+const etiquetaPropuestaPendiente = (trueque) => {
+  if (trueque.publicacion_emisor && trueque.publicacion_receptor) {
+    return 'Completar propuesta'
+  }
+  return 'Realizar trueque'
+}
+
+const completarPropuesta = async (trueque) => {
+  if (hu4?.abrirModalPropuestaDesdeTrueque) {
+    await hu4.abrirModalPropuestaDesdeTrueque(trueque)
   }
 }
 
@@ -202,7 +410,24 @@ const getAvatarColor = () => {
   return colors[index]
 }
 
-onMounted(cargarPerfil)
+const refrescarVistaPerfil = async () => {
+  await Promise.all([cargarPerfil(), cargarMisTrueques()])
+}
+
+onMounted(async () => {
+  const sesion = await userController.obtenerSesionActual()
+  usuarioActualId.value = sesion?.id ?? null
+  if (hu4?.registrarRefrescarPerfil) {
+    hu4.registrarRefrescarPerfil(refrescarVistaPerfil)
+  }
+  await refrescarVistaPerfil()
+})
+
+onUnmounted(() => {
+  if (hu4?.registrarRefrescarPerfil) {
+    hu4.registrarRefrescarPerfil(null)
+  }
+})
 </script>
 
 <style scoped>

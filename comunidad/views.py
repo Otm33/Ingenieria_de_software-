@@ -6,9 +6,17 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ValidationError
 
-from .models import Publicacion, Usuario
-from .repositories import PublicacionRepository, ResenaRepository, UsuarioRepository
-from .serializers import PublicacionSerializer, UsuarioSerializer, ResenaSerializer
+from .models import Publicacion, SaldoComercial, Usuario
+from .repositories import AcuerdoTruequeRepository, PublicacionRepository, ResenaRepository, UsuarioRepository
+from .serializers import (
+    AcuerdoTruequeSerializer,
+    MatchEnriquecidoSerializer,
+    NotificacionSerializer,
+    PublicacionSerializer,
+    ResenaSerializer,
+    SaldoComercialSerializer,
+    UsuarioSerializer,
+)
 from .services import (
     BusinessError,
     CarteleraService,
@@ -204,6 +212,7 @@ class ActualizarPublicacionView(APIView):
 
 class FinalizarTruequeView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -211,14 +220,24 @@ class FinalizarTruequeView(APIView):
 
     def post(self, request, trueque_id):
         try:
-            mensaje = self.servicio.finalizar_trueque(request.user, trueque_id)
-            return Response({"message": mensaje})
+            resultado = self.servicio.finalizar_trueque(request.user, trueque_id)
+            trueque = AcuerdoTruequeRepository().obtener_por_participante(trueque_id, request.user)
+            return Response({
+                "message": resultado.get("mensaje", ""),
+                "estado": trueque.estado,
+                "emisor_confirmado": trueque.emisor_confirmado,
+                "receptor_confirmado": trueque.receptor_confirmado,
+                "saldo_transferido": resultado.get("saldo_transferido", False),
+                "impacto_horas": resultado.get("impacto_horas", 0),
+                "habilitar_resena": resultado.get("habilitar_resena", False),
+            })
         except BusinessError as error:
             return manejar_error(error)
 
 
 class RegistrarResenaView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -265,23 +284,22 @@ class MatchmakingView(APIView):
             return Response(resultado, status=status.HTTP_200_OK)
         
         if publicacion_id:
-            # Buscar matches basados en la publicación específica
             matches = self.servicio.obtener_matches_por_publicacion(request.user, publicacion_id)
-            mensaje = f"Se encontraron coincidencias para la publicación seleccionada."
+            mensaje = "Se encontraron coincidencias para la publicación seleccionada."
         else:
-            # Buscar matches basados en todas las publicaciones del usuario (comportamiento original)
             matches = self.servicio.obtener_matches(request.user)
             mensaje = "Se encontraron coincidencias (Match)."
-        
-        serializer = UsuarioSerializer(matches, many=True)
+
+        matches_data = MatchEnriquecidoSerializer(matches, many=True).data
         return Response(
-            {"matches": serializer.data, "mensaje": mensaje},
+            {"matches": matches_data, "mensaje": mensaje, "cantidad": len(matches_data)},
             status=status.HTTP_200_OK,
         )
 
 
 class CrearPropuestaView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -303,8 +321,25 @@ class CrearPropuestaView(APIView):
             return manejar_error(error)
 
 
+class MisTruequesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        trueques = AcuerdoTruequeRepository().listar_por_usuario(request.user)
+        serializer = AcuerdoTruequeSerializer(
+            trueques,
+            many=True,
+            context={"request": request},
+        )
+        return Response({
+            "trueques": serializer.data,
+            "cantidad": len(serializer.data),
+        }, status=status.HTTP_200_OK)
+
+
 class ResponderPropuestaView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -439,12 +474,16 @@ class VerMiPerfilView(APIView):
             trueques_enviados = AcuerdoTrueque.objects.filter(emisor=request.user)
             trueques_recibidos = AcuerdoTrueque.objects.filter(receptor=request.user)
 
+            resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
+
             return Response({
                 "usuario": UsuarioSerializer(request.user).data,
+                "promedio_estrellas": request.user.promedio_estrellas,
                 "publicaciones": PublicacionSerializer(publicaciones, many=True).data,
                 "publicaciones_activas": PublicacionSerializer(publicaciones_activas, many=True).data,
                 "publicaciones_pausadas": PublicacionSerializer(publicaciones_pausadas, many=True).data,
-                "resenas_recibidas": ResenaSerializer(resenas_recibidas, many=True).data,
+                "resenas_recibidas": resenas_data,
+                "cantidad_resenas": len(resenas_data),
                 "trueques_enviados_count": trueques_enviados.count(),
                 "trueques_recibidos_count": trueques_recibidos.count(),
                 "saldo_comercial": float(request.user.saldo_comercial),
@@ -517,35 +556,31 @@ class DirectorioComunidadView(APIView):
 
 class NotificacionesView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.servicio = servicio or NotificacionService()
 
     def get(self, request):
-        """Obtiene las notificaciones no leídas del usuario."""
+        """Obtiene las notificaciones del usuario (pendientes por defecto)."""
         try:
-            notificaciones = self.servicio.obtener_notificaciones_usuario(request.user)
-            
-            # Serializar las notificaciones
-            notificaciones_data = []
-            for notif in notificaciones:
-                notificaciones_data.append({
-                    "id": notif.id,
-                    "mensaje": notif.mensaje,
-                    "remitente_nombre": notif.remitente.nombre_real,
-                    "remitente_username": notif.remitente.username,
-                    "estado": notif.estado,
-                    "creada_el": notif.creada_el.isoformat() if notif.creada_el else None,
-                    "trueque_id": notif.trueque.id,
-                    "publicacion_titulo": notif.publicacion_original.titulo,
-                    "publicacion_tipo": notif.publicacion_original.tipo,
-                    "prioridad": notif.prioridad
-                })
-            
+            incluir_leidas = request.query_params.get('incluir_leidas', '').lower() in (
+                '1', 'true', 'yes',
+            )
+            notificaciones = self.servicio.obtener_notificaciones_usuario(
+                request.user,
+                incluir_leidas=incluir_leidas,
+            )
+            notificaciones_data = NotificacionSerializer(
+                notificaciones,
+                many=True,
+                context={"request": request},
+            ).data
+
             return Response({
                 "notificaciones": notificaciones_data,
-                "cantidad": len(notificaciones_data)
+                "cantidad": len(notificaciones_data),
             }, status=status.HTTP_200_OK)
         except Exception as error:
             return Response(
@@ -554,20 +589,37 @@ class NotificacionesView(APIView):
             )
     
     def post(self, request):
-        """Marca una notificación como leída."""
+        """Marca notificaciones como leídas (por id o por trueque)."""
         notificacion_id = request.data.get("notificacion_id")
-        if not notificacion_id:
+        trueque_id = request.data.get("trueque_id")
+
+        if not notificacion_id and not trueque_id:
             return Response(
-                {"error": "Falta notificacion_id"},
+                {"error": "Falta notificacion_id o trueque_id"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         try:
-            self.servicio.marcar_notificacion_leida(notificacion_id)
+            if trueque_id:
+                cantidad = self.servicio.marcar_notificaciones_trueque_leidas(
+                    request.user,
+                    trueque_id,
+                )
+                return Response(
+                    {
+                        "message": "Notificaciones del trueque marcadas como leídas",
+                        "cantidad": cantidad,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            self.servicio.marcar_notificacion_leida(notificacion_id, request.user)
             return Response(
                 {"message": "Notificación marcada como leída"},
                 status=status.HTTP_200_OK,
             )
+        except BusinessError as error:
+            return manejar_error(error)
         except Exception as error:
             return Response(
                 {"error": f"Error al marcar notificación: {str(error)}"},

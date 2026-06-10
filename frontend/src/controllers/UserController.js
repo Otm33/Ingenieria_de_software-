@@ -72,6 +72,46 @@ export default class UserController {
     return await this.service.obtenerMatches(publicacionId)
   }
 
+  async obtenerMatchesEnriquecidos(publicacionId = null) {
+    return await this.service.obtenerMatchesEnriquecidos(publicacionId)
+  }
+
+  async crearPropuesta(receptorId, publicacionEmisorId, publicacionReceptorId) {
+    return await this.service.crearPropuesta(
+      receptorId,
+      publicacionEmisorId,
+      publicacionReceptorId,
+    )
+  }
+
+  async responderPropuesta(truequeId, accion) {
+    return await this.service.responderPropuesta(truequeId, accion)
+  }
+
+  async finalizarTrueque(truequeId) {
+    return await this.service.finalizarTrueque(truequeId)
+  }
+
+  async registrarResena(truequeId, estrellas, comentario) {
+    return await this.service.registrarResena(truequeId, estrellas, comentario)
+  }
+
+  async obtenerNotificaciones(incluirLeidas = false) {
+    return await this.service.obtenerNotificaciones(incluirLeidas)
+  }
+
+  async marcarNotificacionLeida(notificacionId) {
+    return await this.service.marcarNotificacionLeida(notificacionId)
+  }
+
+  async marcarNotificacionesTruequeLeidas(truequeId) {
+    return await this.service.marcarNotificacionesTruequeLeidas(truequeId)
+  }
+
+  async obtenerMisTrueques() {
+    return await this.service.obtenerMisTrueques()
+  }
+
   get users() {
     return this.service.users
   }

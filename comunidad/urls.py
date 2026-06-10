@@ -10,6 +10,7 @@ from .views import (
     CrearPublicacionView,
     ActualizarPublicacionView,
     FinalizarTruequeView,
+    MisTruequesView,
     RegistrarResenaView,
     EmitirVueltoComercialView,
     MatchmakingView,
@@ -45,6 +46,7 @@ urlpatterns = [
     
     # HU4: Finalizar y Reseñas
     path('trueques/<int:trueque_id>/finalizar/', FinalizarTruequeView.as_view(), name='finalizar_trueque'),
+    path('mis-trueques/', MisTruequesView.as_view(), name='mis_trueques'),
     path('resenas/', RegistrarResenaView.as_view(), name='registrar_resena'),
     
     # Perfiles de usuarios

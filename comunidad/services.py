@@ -157,8 +157,13 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
 
 
 class PublicacionService:
-    def __init__(self, publicacion_repository=None):
+    def __init__(self, publicacion_repository=None, matchmaking_service=None):
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
+        self.matchmaking_service = matchmaking_service
+
+    def _disparar_deteccion_matches(self, usuario):
+        servicio = self.matchmaking_service or MatchmakingService()
+        servicio.detectar_y_notificar_matches(usuario)
 
     def crear_publicacion(self, usuario, datos):
         tipo = datos.get("tipo")
@@ -185,13 +190,15 @@ class PublicacionService:
         if contiene_palabra_prohibida(titulo) or contiene_palabra_prohibida(descripcion):
             raise BusinessError("La publicación contiene palabras no permitidas.")
 
-        return self.publicacion_repository.crear(usuario, {
+        publicacion = self.publicacion_repository.crear(usuario, {
             "tipo": tipo,
             "titulo": titulo,
             "descripcion": descripcion,
             "categoria": categoria,
             "urgencia": urgencia,
         })
+        self._disparar_deteccion_matches(usuario)
+        return publicacion
 
     def pausar_publicacion(self, usuario, publicacion_id):
         return self.actualizar_estado_publicacion(usuario, publicacion_id, esta_activa=False)
@@ -220,6 +227,8 @@ class PublicacionService:
 
         publicacion.esta_activa = esta_activa
         publicacion.save(update_fields=["esta_activa"])
+        if esta_activa:
+            self._disparar_deteccion_matches(usuario)
         return publicacion
 
 
@@ -237,6 +246,89 @@ class TruequeService(TruequeInterface):
         self.usuario_repository = usuario_repository or UsuarioRepository()
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
         self.notificacion_service = notificacion_service or NotificacionService()
+
+    @staticmethod
+    def _es_intercambio_mutuo(trueque):
+        """Trueque complementario: ambas partes ofrecen un TALENTO (impacto 0 horas)."""
+        pe = trueque.publicacion_emisor
+        pr = trueque.publicacion_receptor
+        if not pe or not pr:
+            return False
+        if pe.tipo != "TALENTO" or pr.tipo != "TALENTO":
+            return False
+        participantes = {trueque.emisor_id, trueque.receptor_id}
+        return participantes == {pe.usuario_id, pr.usuario_id}
+
+    @staticmethod
+    def _identificar_roles_trueque(trueque):
+        """Determina prestador (TALENTO) y receptor_servicio (NECESIDAD) según publicaciones."""
+        prestador = None
+        receptor_servicio = None
+
+        for usuario, publicacion in (
+            (trueque.emisor, trueque.publicacion_emisor),
+            (trueque.receptor, trueque.publicacion_receptor),
+        ):
+            if not publicacion:
+                continue
+            if publicacion.tipo == "TALENTO":
+                prestador = usuario
+            elif publicacion.tipo == "NECESIDAD":
+                receptor_servicio = usuario
+
+        if prestador and receptor_servicio:
+            return prestador, receptor_servicio
+
+        # Fallback sin publicaciones: emisor pierde hora, receptor gana hora.
+        return trueque.receptor, trueque.emisor
+
+    @staticmethod
+    def _validar_publicaciones_propuesta(emisor, receptor, pub_emisor, pub_receptor):
+        if pub_emisor and pub_emisor.usuario_id != emisor.id:
+            raise BusinessError("La publicación del emisor no pertenece al usuario emisor.")
+        if pub_receptor and pub_receptor.usuario_id != receptor.id:
+            raise BusinessError("La publicación del receptor no pertenece al usuario receptor.")
+
+        if not pub_emisor or not pub_receptor:
+            return
+
+        if pub_emisor.id == pub_receptor.id:
+            raise BusinessError("No se puede usar la misma publicación en ambos lados del trueque.")
+
+        tipo_emisor = pub_emisor.tipo
+        tipo_receptor = pub_receptor.tipo
+
+        if tipo_emisor == "NECESIDAD" and tipo_receptor == "NECESIDAD":
+            raise BusinessError(
+                "No se puede proponer un trueque entre dos necesidades. Una necesidad debe cubrirse "
+                "con un talento ofrecido."
+            )
+
+        combinaciones_validas = {
+            ("TALENTO", "NECESIDAD"),
+            ("NECESIDAD", "TALENTO"),
+            ("TALENTO", "TALENTO"),
+        }
+        if (tipo_emisor, tipo_receptor) not in combinaciones_validas:
+            raise BusinessError("Combinación de publicaciones no válida para un trueque.")
+
+    @staticmethod
+    def _mensaje_propuesta(emisor, pub_emisor, pub_receptor):
+        nombre = emisor.nombre_real
+        if pub_emisor.tipo == "TALENTO" and pub_receptor.tipo == "NECESIDAD":
+            return (
+                f"{nombre} te ofrece {pub_emisor.titulo} "
+                f"para tu necesidad de {pub_receptor.titulo}."
+            )
+        if pub_emisor.tipo == "NECESIDAD" and pub_receptor.tipo == "TALENTO":
+            return (
+                f"{nombre} solicita tu talento en {pub_receptor.titulo} "
+                f"(necesita {pub_emisor.titulo})."
+            )
+        return (
+            f"{nombre} te propone intercambio mutuo: "
+            f"ofrece {pub_emisor.titulo} a cambio de {pub_receptor.titulo}."
+        )
 
     def crear_propuesta(self, emisor, receptor_id, publicacion_emisor_id=None, publicacion_receptor_id=None):
         """Crea una propuesta de trueque con referencias a las publicaciones específicas."""
@@ -268,24 +360,26 @@ class TruequeService(TruequeInterface):
             except Publicacion.DoesNotExist:
                 raise BusinessError("Publicación del receptor no encontrada.", status_code=404)
 
-        trueque = self.trueque_repository.crear(
-            emisor=emisor, 
+        self._validar_publicaciones_propuesta(emisor, receptor, pub_emisor, pub_receptor)
+
+        trueque = self.trueque_repository.obtener_o_crear_pendiente(
+            emisor=emisor,
             receptor=receptor,
             publicacion_emisor=pub_emisor,
-            publicacion_receptor=pub_receptor
+            publicacion_receptor=pub_receptor,
         )
-        
-        # Crear notificación para el receptor
-        if pub_emisor:
-            mensaje = f"{emisor.nombre_real} está interesado en tu {pub_emisor.tipo.lower()}: {pub_emisor.titulo}"
+
+        if pub_receptor and pub_emisor:
+            mensaje = self._mensaje_propuesta(emisor, pub_emisor, pub_receptor)
             self.notificacion_service.crear_notificacion_propuesta(
                 destinatario=receptor,
                 remitente=emisor,
                 trueque=trueque,
-                publicacion_original=pub_emisor,
-                mensaje=mensaje
+                publicacion_original=pub_receptor,
+                mensaje=mensaje,
+                tipo="PROPUESTA",
             )
-        
+
         return trueque
 
     def responder_propuesta(self, receptor, trueque_id, accion):
@@ -295,59 +389,83 @@ class TruequeService(TruequeInterface):
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
-            trueque.estado = "EN_CURSO"
+            trueque.estado = "ACEPTADO"
             self.trueque_repository.guardar(trueque)
-            return "Propuesta aceptada. Intercambio en curso."
+            self.notificacion_service.actualizar_estado_propuesta(trueque, "ACEPTADA")
+            return "Propuesta aceptada. Confirma la finalización cuando el servicio esté completo."
 
         if accion == "RECHAZAR":
             trueque.estado = "RECHAZADO"
             self.trueque_repository.guardar(trueque)
+            self.notificacion_service.actualizar_estado_propuesta(trueque, "RECHAZADA")
             return "Propuesta rechazada."
 
         raise BusinessError("Accion invalida.")
 
     def finalizar_trueque(self, usuario, trueque_id):
-        """Finaliza el trueque cuando el usuario con necesidad confirma que el servicio fue completado."""
+        """Confirmación bilateral antes de transferir el saldo de horas."""
         with transaction.atomic():
             try:
                 trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
-            # Verificar que el usuario sea parte del trueque
-            if usuario != trueque.emisor and usuario != trueque.receptor:
+            if usuario not in [trueque.emisor, trueque.receptor]:
                 raise BusinessError("No eres parte de este trueque.", status_code=403)
 
-            # Verificar que el trueque esté en curso
-            if trueque.estado != "EN_CURSO":
-                raise BusinessError("El trueque no está en curso.", status_code=400)
+            if trueque.estado != "ACEPTADO":
+                raise BusinessError("El trueque debe estar aceptado para confirmar finalización.", status_code=400)
 
-            # Verificar que el usuario con necesidad sea quien finaliza
-            if trueque.publicacion_emisor and trueque.publicacion_emisor.tipo == "TALENTO":
-                # El emisor tiene el talento, el receptor tiene la necesidad
-                if usuario != trueque.receptor:
-                    raise BusinessError("Solo el usuario con necesidad puede finalizar el trueque.", status_code=403)
-            elif trueque.publicacion_receptor and trueque.publicacion_receptor.tipo == "NECESIDAD":
-                # El receptor tiene la necesidad
-                if usuario != trueque.receptor:
-                    raise BusinessError("Solo el usuario con necesidad puede finalizar el trueque.", status_code=403)
+            if usuario == trueque.emisor:
+                trueque.emisor_confirmado = True
+            else:
+                trueque.receptor_confirmado = True
 
-            # Verificar límite de balance negativo
-            emisor = trueque.emisor
-            receptor = trueque.receptor
+            if not (trueque.emisor_confirmado and trueque.receptor_confirmado):
+                self.trueque_repository.guardar(trueque)
+                return {
+                    "saldo_transferido": False,
+                    "impacto_horas": 0,
+                    "habilitar_resena": False,
+                    "mensaje": "Confirmación registrada. Esperando confirmación de la otra parte.",
+                }
 
-            if emisor.horas_de_vida - 1.0 < -10.0:
-                raise BusinessError("El emisor tiene un límite de balance negativo excedido (-10).")
+            if self._es_intercambio_mutuo(trueque):
+                trueque.estado = "FINALIZADO"
+                self.trueque_repository.guardar(trueque)
+                return {
+                    "saldo_transferido": False,
+                    "impacto_horas": 0,
+                    "habilitar_resena": True,
+                    "mensaje": (
+                        "Trueque mutuo finalizado. Intercambio equilibrado sin transferencia "
+                        "de horas. Sistema de reseñas habilitado."
+                    ),
+                }
 
-            # Transferir las horas (el que dio el servicio pierde una hora, el que recibió gana una hora)
-            emisor.horas_de_vida -= 1.0
-            receptor.horas_de_vida += 1.0
-            self.usuario_repository.guardar(emisor)
-            self.usuario_repository.guardar(receptor)
+            prestador, receptor_servicio = self._identificar_roles_trueque(trueque)
+
+            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador.id)
+            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio.id)
+
+            if receptor_servicio.horas_de_vida - 1.0 < -10.0:
+                raise BusinessError(
+                    "El usuario que recibe el servicio excedería el límite de -10 horas.",
+                )
+
+            prestador.horas_de_vida += 1.0
+            receptor_servicio.horas_de_vida -= 1.0
+            self.usuario_repository.guardar(prestador)
+            self.usuario_repository.guardar(receptor_servicio)
 
             trueque.estado = "FINALIZADO"
             self.trueque_repository.guardar(trueque)
-            return "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado."
+            return {
+                "saldo_transferido": True,
+                "impacto_horas": 1,
+                "habilitar_resena": True,
+                "mensaje": "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado.",
+            }
 
 
 class ResenaService(ResenaInterface):
@@ -368,34 +486,33 @@ class ResenaService(ResenaInterface):
         if estrellas < 1 or estrellas > 5:
             raise BusinessError("Las estrellas deben estar entre 1 y 5.")
 
-        try:
-            trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
-        except ObjectDoesNotExist:
-            raise BusinessError("Trueque no encontrado.", status_code=404)
+        if len(comentario) > 500:
+            raise BusinessError("El comentario no puede superar los 500 caracteres.")
 
-        if usuario not in [trueque.emisor, trueque.receptor]:
-            raise BusinessError("No eres parte de este trueque.", status_code=403)
-        
-        if trueque.estado != "FINALIZADO":
-            raise BusinessError("Solo se pueden dejar reseñas de trueques finalizados.", status_code=400)
-        
-        # Verificar si ya existe una reseña de este usuario para este trueque
-        try:
-            from .models import Resena
-            Resena.objects.get(trueque=trueque, calificador=usuario)
-            raise BusinessError("Ya has dejado una reseña para este trueque.", status_code=400)
-        except Resena.DoesNotExist:
-            pass  # No hay reseña previa, podemos continuar
+        with transaction.atomic():
+            try:
+                trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
+            except ObjectDoesNotExist:
+                raise BusinessError("Trueque no encontrado.", status_code=404)
 
-        calificado = trueque.receptor if usuario == trueque.emisor else trueque.emisor
-        self.resena_repository.crear(trueque, usuario, calificado, estrellas, comentario)
+            if usuario not in [trueque.emisor, trueque.receptor]:
+                raise BusinessError("No eres parte de este trueque.", status_code=403)
 
-        resenas = self.resena_repository.listar_por_calificado(calificado)
-        total_estrellas = sum(resena.estrellas for resena in resenas)
-        calificado.promedio_estrellas = total_estrellas / len(resenas)
-        self.usuario_repository.guardar(calificado)
+            if trueque.estado != "FINALIZADO":
+                raise BusinessError("Solo se pueden dejar reseñas de trueques finalizados.", status_code=400)
 
-        return "Resena registrada y promedio actualizado."
+            # Verificar si ya existe una reseña de este usuario para este trueque
+            try:
+                from .models import Resena
+                Resena.objects.get(trueque=trueque, calificador=usuario)
+                raise BusinessError("Ya has dejado una reseña para este trueque.", status_code=400)
+            except Resena.DoesNotExist:
+                pass  # No hay reseña previa, podemos continuar
+
+            calificado = trueque.receptor if usuario == trueque.emisor else trueque.emisor
+            self.resena_repository.crear(trueque, usuario, calificado, estrellas, comentario)
+
+        return "Resena registrada correctamente."
 
 
 class ComercioService(ComercioInterface):
@@ -476,31 +593,77 @@ class ComercioService(ComercioInterface):
 class NotificacionService:
     def __init__(self, notificacion_repository=None):
         self.notificacion_repository = notificacion_repository or NotificacionPropuestaRepository()
-    
-    def crear_notificacion_propuesta(self, destinatario, remitente, trueque, publicacion_original, mensaje):
+
+    def crear_notificacion_propuesta(
+        self,
+        destinatario,
+        remitente,
+        trueque,
+        publicacion_original,
+        mensaje,
+        tipo="PROPUESTA",
+    ):
         return self.notificacion_repository.crear_notificacion(
-            destinatario, remitente, trueque, publicacion_original, mensaje
+            destinatario,
+            remitente,
+            trueque,
+            publicacion_original,
+            mensaje,
+            tipo=tipo,
+        )
+
+    def actualizar_estado_propuesta(self, trueque, estado):
+        return self.notificacion_repository.actualizar_estado_por_trueque(trueque, estado)
+    
+    def obtener_notificaciones_usuario(self, usuario, incluir_leidas=False):
+        return self.notificacion_repository.obtener_notificaciones_usuario(
+            usuario,
+            incluir_leidas=incluir_leidas,
         )
     
-    def obtener_notificaciones_usuario(self, usuario):
-        return self.notificacion_repository.obtener_notificaciones_usuario(usuario)
-    
-    def marcar_notificacion_leida(self, notificacion_id):
-        return self.notificacion_repository.marcar_como_leida(notificacion_id)
+    def marcar_notificacion_leida(self, notificacion_id, usuario):
+        try:
+            return self.notificacion_repository.marcar_como_leida(
+                notificacion_id,
+                destinatario=usuario,
+            )
+        except ObjectDoesNotExist:
+            raise BusinessError("Notificación no encontrada.", status_code=404)
+
+    def marcar_notificaciones_trueque_leidas(self, usuario, trueque_id):
+        actualizadas = self.notificacion_repository.marcar_leidas_por_trueque(
+            usuario,
+            trueque_id,
+        )
+        return actualizadas
 
 
 class MatchmakingService(MatchmakingInterface):
-    def __init__(self, publicacion_repository=None, matchmaking_repository=None):
+    def __init__(
+        self,
+        publicacion_repository=None,
+        matchmaking_repository=None,
+        notificacion_repository=None,
+        trueque_repository=None,
+    ):
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
         self.matchmaking_repository = matchmaking_repository or MatchmakingRepository()
+        self.notificacion_repository = notificacion_repository or NotificacionPropuestaRepository()
+        self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
         self.matches = []
 
     def obtener_matches(self, usuario):
-        mis_necesidades = self.publicacion_repository.categorias_activas_por_usuario_y_tipo(usuario, "NECESIDAD")
-        mis_talentos = self.publicacion_repository.categorias_activas_por_usuario_y_tipo(usuario, "TALENTO")
-        self.matches = self.matchmaking_repository.buscar_matches(usuario, mis_necesidades, mis_talentos)
+        titulos_necesidades = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
+            usuario, "NECESIDAD"
+        )
+        titulos_talentos = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
+            usuario, "TALENTO"
+        )
+        self.matches = self.matchmaking_repository.buscar_matches(
+            usuario, titulos_necesidades, titulos_talentos
+        )
         return self.matches
-    
+
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
         """Verifica si el usuario tiene publicaciones con el mismo título que la publicación seleccionada."""
         try:
@@ -526,3 +689,211 @@ class MatchmakingService(MatchmakingInterface):
             return self.matches
         except Publicacion.DoesNotExist:
             return []
+
+    @staticmethod
+    def _construir_match_detalle(match, usuario):
+        """Arma las dos parejas del match desde la perspectiva del destinatario."""
+        from .models import Publicacion
+
+        detalle = []
+        vistos = set()
+
+        for sugerencia in match.get("publicaciones_sugeridas", []):
+            mi_pub = Publicacion.objects.filter(id=sugerencia.get("mi_pub_id")).first()
+            su_pub = Publicacion.objects.filter(id=sugerencia.get("su_pub_id")).first()
+            if not mi_pub or not su_pub or mi_pub.usuario_id != usuario.id:
+                continue
+            if mi_pub.tipo == "NECESIDAD" and su_pub.tipo == "TALENTO":
+                rol = "recibo"
+            elif mi_pub.tipo == "TALENTO" and su_pub.tipo == "NECESIDAD":
+                rol = "doy"
+            else:
+                continue
+            clave = (rol, mi_pub.titulo)
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            detalle.append(
+                {
+                    "rol": rol,
+                    "mi_titulo": mi_pub.titulo,
+                    "mi_tipo": mi_pub.tipo,
+                    "su_titulo": su_pub.titulo,
+                    "su_tipo": su_pub.tipo,
+                }
+            )
+
+        if len(detalle) < 2:
+            otro_usuario = match["usuario"]
+            for tal_otro in match.get("talentos_coincidentes", []):
+                mi_nec = Publicacion.objects.filter(
+                    usuario=usuario,
+                    tipo="NECESIDAD",
+                    titulo=tal_otro.titulo,
+                    esta_activa=True,
+                ).first()
+                if not mi_nec:
+                    continue
+                clave = ("recibo", mi_nec.titulo)
+                if clave in vistos:
+                    continue
+                vistos.add(clave)
+                detalle.append(
+                    {
+                        "rol": "recibo",
+                        "mi_titulo": mi_nec.titulo,
+                        "mi_tipo": "NECESIDAD",
+                        "su_titulo": tal_otro.titulo,
+                        "su_tipo": "TALENTO",
+                    }
+                )
+
+            for nec_otro in match.get("necesidades_coincidentes", []):
+                mi_tal = Publicacion.objects.filter(
+                    usuario=usuario,
+                    tipo="TALENTO",
+                    titulo=nec_otro.titulo,
+                    esta_activa=True,
+                ).first()
+                if not mi_tal:
+                    continue
+                clave = ("doy", mi_tal.titulo)
+                if clave in vistos:
+                    continue
+                vistos.add(clave)
+                detalle.append(
+                    {
+                        "rol": "doy",
+                        "mi_titulo": mi_tal.titulo,
+                        "mi_tipo": "TALENTO",
+                        "su_titulo": nec_otro.titulo,
+                        "su_tipo": "NECESIDAD",
+                    }
+                )
+
+        orden = {"recibo": 0, "doy": 1}
+        detalle.sort(key=lambda entrada: orden.get(entrada["rol"], 2))
+        return detalle
+
+    @staticmethod
+    def _mensaje_match_desde_detalle(match_detalle, otro_nombre, es_mutuo, match):
+        recibo = next((entrada for entrada in match_detalle if entrada["rol"] == "recibo"), None)
+        doy = next((entrada for entrada in match_detalle if entrada["rol"] == "doy"), None)
+
+        if es_mutuo and recibo and doy:
+            return (
+                f"¡Match con {otro_nombre}! Tú necesitas {recibo['mi_titulo']} (ellos ofrecen) "
+                f"y ofreces {doy['mi_titulo']} (ellos necesitan)."
+            )
+
+        talento_titulo = (
+            match["talentos_coincidentes"][0].titulo if match.get("talentos_coincidentes") else "un servicio"
+        )
+        necesidad_titulo = (
+            match["necesidades_coincidentes"][0].titulo
+            if match.get("necesidades_coincidentes")
+            else "otro servicio"
+        )
+        if es_mutuo:
+            return (
+                f"¡Match complementario! Intercambio equilibrado con {otro_nombre}: "
+                f"tú ofreces {doy['mi_titulo'] if doy else talento_titulo}, "
+                f"recibes {recibo['mi_titulo'] if recibo else necesidad_titulo} (0 horas netas)."
+            )
+        return (
+            f"¡Match! {otro_nombre} ofrece {talento_titulo} "
+            f"y necesita {necesidad_titulo}. Coincide con tu perfil."
+        )
+
+    @staticmethod
+    def _resolver_publicaciones_match_completo(match, usuario):
+        """Match complementario: talento propio + talento del vecino (0 horas netas)."""
+        from .models import Publicacion
+
+        if not match.get("talentos_coincidentes") or not match.get("necesidades_coincidentes"):
+            return None, None
+
+        titulos_que_yo_ofrezco = [nec.titulo for nec in match["necesidades_coincidentes"]]
+        pub_usuario = Publicacion.objects.filter(
+            usuario=usuario,
+            tipo="TALENTO",
+            esta_activa=True,
+            titulo__in=titulos_que_yo_ofrezco,
+        ).first()
+        pub_otro = match["talentos_coincidentes"][0]
+
+        if pub_usuario and pub_otro:
+            return pub_usuario, pub_otro
+        return None, None
+
+    def detectar_y_notificar_matches(self, usuario):
+        matches = self.obtener_matches(usuario)
+        notificaciones_creadas = []
+
+        for match in matches:
+            otro_usuario = match["usuario"]
+            if self.notificacion_repository.existe_match_entre(usuario, otro_usuario):
+                continue
+
+            pub_emisor, pub_receptor = self._resolver_publicaciones_match_completo(match, usuario)
+
+            if not pub_emisor:
+                sugerencia = match["publicaciones_sugeridas"][0] if match["publicaciones_sugeridas"] else {}
+                if sugerencia:
+                    from .models import Publicacion
+
+                    pub_emisor = Publicacion.objects.filter(id=sugerencia.get("mi_pub_id")).first()
+                    pub_receptor = Publicacion.objects.filter(id=sugerencia.get("su_pub_id")).first()
+
+            trueque = self.trueque_repository.obtener_o_crear_pendiente(
+                emisor=usuario,
+                receptor=otro_usuario,
+                publicacion_emisor=pub_emisor,
+                publicacion_receptor=pub_receptor,
+            )
+
+            es_mutuo = TruequeService._es_intercambio_mutuo(trueque)
+            publicacion_referencia = pub_receptor or pub_emisor
+
+            if not publicacion_referencia:
+                continue
+
+            match_detalle_usuario = self._construir_match_detalle(match, usuario)
+            mensaje_para_usuario = self._mensaje_match_desde_detalle(
+                match_detalle_usuario,
+                otro_usuario.nombre_real,
+                es_mutuo,
+                match,
+            )
+            notificaciones_creadas.append(
+                self.notificacion_repository.crear_notificacion(
+                    destinatario=usuario,
+                    remitente=otro_usuario,
+                    trueque=trueque,
+                    publicacion_original=publicacion_referencia,
+                    mensaje=mensaje_para_usuario,
+                    tipo="MATCH",
+                    match_detalle=match_detalle_usuario or None,
+                )
+            )
+
+            match_detalle_otro = self._construir_match_detalle(match, otro_usuario)
+            mensaje_para_match = self._mensaje_match_desde_detalle(
+                match_detalle_otro,
+                usuario.nombre_real,
+                es_mutuo,
+                match,
+            )
+            notificaciones_creadas.append(
+                self.notificacion_repository.crear_notificacion(
+                    destinatario=otro_usuario,
+                    remitente=usuario,
+                    trueque=trueque,
+                    publicacion_original=publicacion_referencia,
+                    mensaje=mensaje_para_match,
+                    tipo="MATCH",
+                    match_detalle=match_detalle_otro or None,
+                )
+            )
+
+        return notificaciones_creadas

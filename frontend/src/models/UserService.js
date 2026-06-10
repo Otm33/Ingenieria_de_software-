@@ -149,6 +149,11 @@ export default class UserService {
   }
 
   async obtenerMatches(publicacionId = null) {
+    const { matches } = await this.obtenerMatchesEnriquecidos(publicacionId)
+    return matches.map((match) => match.usuario)
+  }
+
+  async obtenerMatchesEnriquecidos(publicacionId = null) {
     const params = new URLSearchParams()
     if (publicacionId) {
       params.set('publicacion_id', publicacionId)
@@ -156,7 +161,121 @@ export default class UserService {
 
     const endpoint = params.toString() ? `matchmaking/?${params.toString()}` : 'matchmaking/'
     const data = await this._request(endpoint)
-    return data.matches || []
+
+    const matches = (data.matches || []).map((match) => ({
+      usuario: new User(match.usuario),
+      talentosCoincidentes: (match.talentos_coincidentes || []).map(
+        (publicacion) => new Publicacion(publicacion),
+      ),
+      necesidadesCoincidentes: (match.necesidades_coincidentes || []).map(
+        (publicacion) => new Publicacion(publicacion),
+      ),
+      publicacionesSugeridas: match.publicaciones_sugeridas || [],
+    }))
+
+    return {
+      matches,
+      mensaje: data.mensaje || '',
+      cantidad: data.cantidad ?? matches.length,
+    }
+  }
+
+  async crearPropuesta(receptorId, publicacionEmisorId, publicacionReceptorId) {
+    return await this._request('trueques/propuestas/crear/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        receptor_id: receptorId,
+        publicacion_emisor_id: publicacionEmisorId,
+        publicacion_receptor_id: publicacionReceptorId,
+      }),
+    })
+  }
+
+  async responderPropuesta(truequeId, accion) {
+    return await this._request(`trueques/${truequeId}/responder/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion }),
+    })
+  }
+
+  async finalizarTrueque(truequeId) {
+    return await this._request(`trueques/${truequeId}/finalizar/`, {
+      method: 'POST',
+    })
+  }
+
+  async registrarResena(truequeId, estrellas, comentario) {
+    return await this._request('resenas/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trueque_id: truequeId,
+        estrellas,
+        comentario,
+      }),
+    })
+  }
+
+  _normalizarMatchDetalle(matchDetalle) {
+    if (!Array.isArray(matchDetalle) || !matchDetalle.length) {
+      return null
+    }
+
+    return matchDetalle.map((entrada) => ({
+      rol: entrada.rol || '',
+      mi_titulo: entrada.mi_titulo || '',
+      mi_tipo: entrada.mi_tipo || '',
+      su_titulo: entrada.su_titulo || '',
+      su_tipo: entrada.su_tipo || '',
+    }))
+  }
+
+  _mapNotificacion(notificacion) {
+    const matchDetalle = this._normalizarMatchDetalle(notificacion.match_detalle)
+
+    return {
+      ...notificacion,
+      match_detalle: matchDetalle,
+    }
+  }
+
+  async obtenerNotificaciones(incluirLeidas = false) {
+    const query = incluirLeidas ? '?incluir_leidas=true' : ''
+    const data = await this._request(`notificaciones/${query}`)
+    const notificaciones = (data.notificaciones || []).map((notificacion) => (
+      this._mapNotificacion(notificacion)
+    ))
+
+    return {
+      notificaciones,
+      cantidad: data.cantidad ?? notificaciones.length,
+    }
+  }
+
+  async marcarNotificacionLeida(notificacionId) {
+    return await this._request('notificaciones/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notificacion_id: notificacionId }),
+    })
+  }
+
+  async marcarNotificacionesTruequeLeidas(truequeId) {
+    return await this._request('notificaciones/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trueque_id: truequeId }),
+    })
+  }
+
+  async obtenerMisTrueques() {
+    const data = await this._request('mis-trueques/')
+    return {
+      trueques: data.trueques || [],
+      cantidad: data.cantidad ?? (data.trueques || []).length,
+    }
   }
 
   get users() {

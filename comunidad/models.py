@@ -22,7 +22,6 @@ class Usuario(AbstractUser):
     email = models.EmailField(unique=True)
     nombre_real = models.CharField(max_length=150) # HU2: Evitar anonimato
     horas_de_vida = models.FloatField(default=0.0)
-    promedio_estrellas = models.FloatField(default=5.0)
     es_comercio = models.BooleanField(default=False) # HU5: Identificador de comercio
     saldo_comercial = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
@@ -34,6 +33,13 @@ class Usuario(AbstractUser):
                 name="limite_balance_negativo_horas"
             )
         ]
+
+    @property
+    def promedio_estrellas(self):
+        resenas = self.resenas_recibidas.all()
+        if not resenas:
+            return 5.0
+        return sum(r.estrellas for r in resenas) / resenas.count()
 
     def __str__(self):
         return f"{self.username} ({self.nombre_real})"
@@ -99,26 +105,37 @@ class AcuerdoTrueque(models.Model):
 
 class Resena(models.Model):
     """HU4: Calificaciones e historial de confianza post-trueque."""
-    trueque = models.OneToOneField(AcuerdoTrueque, on_delete=models.CASCADE, related_name='resena')
+    trueque = models.ForeignKey(AcuerdoTrueque, on_delete=models.CASCADE, related_name='resenas')
     calificador = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='resenas_emitidadas')
     calificado = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='resenas_recibidas')
     estrellas = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comentario = models.TextField(max_length=500) # Restricción estricta de 500 caracteres
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['trueque', 'calificador'],
+                name='una_resena_por_usuario_por_trueque',
+            ),
+        ]
+
 class NotificacionPropuesta(models.Model):
     """Notificaciones para propuestas de trueque que aparecen en la cartelera."""
+    TIPO_CHOICES = [('MATCH', 'Match'), ('PROPUESTA', 'Propuesta')]
     ESTADOS = (
         ('PENDIENTE', 'Pendiente'),
         ('ACEPTADA', 'Aceptada'),
         ('RECHAZADA', 'Rechazada'),
         ('LEIDA', 'Leída'),
     )
-    
+
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='PROPUESTA')
     destinatario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_recibidas')
     remitente = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_enviadas')
     trueque = models.ForeignKey(AcuerdoTrueque, on_delete=models.CASCADE, related_name='notificaciones')
     publicacion_original = models.ForeignKey(Publicacion, on_delete=models.CASCADE, related_name='notificaciones')
     mensaje = models.TextField(max_length=300)
+    match_detalle = models.JSONField(null=True, blank=True)
     estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
     creada_el = models.DateTimeField(auto_now_add=True)
     leida_el = models.DateTimeField(null=True, blank=True)

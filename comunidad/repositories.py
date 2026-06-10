@@ -1,4 +1,4 @@
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, IntegerField, Q, Value, When
 
 from .models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, SaldoComercial, Usuario, UsuarioAutorizado
 
@@ -80,12 +80,14 @@ class PublicacionRepository:
                 default=Value(0),
                 output_field=IntegerField(),
             ),
-            prioridad_estrellas=Case(
-                When(usuario__promedio_estrellas__lt=3.0, then=Value(0)),
-                default=Value(1),
-                output_field=IntegerField(),
-            ),
-        ).order_by("-prioridad_estrellas", "-prioridad_urgencia", "-id")
+        ).order_by("-prioridad_urgencia", "-id")
+
+    def titulos_activos_por_usuario_y_tipo(self, usuario, tipo):
+        return list(
+            Publicacion.objects.filter(usuario=usuario, tipo=tipo, esta_activa=True)
+            .values_list("titulo", flat=True)
+            .distinct()
+        )
 
     def categorias_activas_por_usuario_y_tipo(self, usuario, tipo):
         return list(
@@ -109,6 +111,42 @@ class AcuerdoTruequeRepository:
 
     def obtener_por_receptor(self, trueque_id, receptor):
         return AcuerdoTrueque.objects.get(id=trueque_id, receptor=receptor)
+
+    def obtener_por_participante(self, trueque_id, usuario):
+        return AcuerdoTrueque.objects.get(
+            Q(id=trueque_id) & (Q(emisor=usuario) | Q(receptor=usuario))
+        )
+
+    def listar_por_usuario(self, usuario):
+        return AcuerdoTrueque.objects.filter(
+            Q(emisor=usuario) | Q(receptor=usuario)
+        ).select_related(
+            "emisor",
+            "receptor",
+            "publicacion_emisor",
+            "publicacion_receptor",
+        )
+
+    def obtener_o_crear_pendiente(self, emisor, receptor, publicacion_emisor=None, publicacion_receptor=None):
+        existente = AcuerdoTrueque.objects.filter(
+            Q(emisor=emisor, receptor=receptor) | Q(emisor=receptor, receptor=emisor),
+            estado="PENDIENTE",
+        ).first()
+        if existente:
+            existente.emisor = emisor
+            existente.receptor = receptor
+            if publicacion_emisor is not None:
+                existente.publicacion_emisor = publicacion_emisor
+            if publicacion_receptor is not None:
+                existente.publicacion_receptor = publicacion_receptor
+            existente.save()
+            return existente
+        return self.crear(
+            emisor=emisor,
+            receptor=receptor,
+            publicacion_emisor=publicacion_emisor,
+            publicacion_receptor=publicacion_receptor,
+        )
 
     def guardar(self, trueque):
         trueque.save()
@@ -140,55 +178,161 @@ class SaldoComercialRepository:
 
 
 class NotificacionPropuestaRepository:
-    def crear_notificacion(self, destinatario, remitente, trueque, publicacion_original, mensaje):
-        from .models import NotificacionPropuesta
+    def crear_notificacion(
+        self,
+        destinatario,
+        remitente,
+        trueque,
+        publicacion_original,
+        mensaje,
+        tipo="PROPUESTA",
+        match_detalle=None,
+    ):
         return NotificacionPropuesta.objects.create(
             destinatario=destinatario,
             remitente=remitente,
             trueque=trueque,
             publicacion_original=publicacion_original,
             mensaje=mensaje,
+            match_detalle=match_detalle,
             prioridad=True,
-            estado='PENDIENTE'
+            estado="PENDIENTE",
+            tipo=tipo,
         )
+
+    def existe_match_entre(self, usuario_a, usuario_b):
+        """Evita duplicar MATCH si ya hay notificación (incl. LEIDA) con trueque PENDIENTE."""
+        return NotificacionPropuesta.objects.filter(
+            tipo="MATCH",
+            trueque__estado="PENDIENTE",
+        ).filter(
+            Q(destinatario=usuario_a, remitente=usuario_b)
+            | Q(destinatario=usuario_b, remitente=usuario_a)
+        ).exists()
+
+    def existe_match_pendiente_entre(self, usuario_a, usuario_b):
+        return self.existe_match_entre(usuario_a, usuario_b)
+
+    def actualizar_estado_por_trueque(self, trueque, nuevo_estado):
+        return NotificacionPropuesta.objects.filter(
+            trueque=trueque,
+            tipo="PROPUESTA",
+        ).update(estado=nuevo_estado)
     
-    def obtener_notificaciones_usuario(self, usuario):
+    def obtener_notificaciones_usuario(self, usuario, incluir_leidas=False):
         from .models import NotificacionPropuesta
-        return list(
-            NotificacionPropuesta.objects.filter(destinatario=usuario)
-            .exclude(estado='LEIDA')
-            .order_by('-prioridad', '-creada_el')
-        )
+        queryset = NotificacionPropuesta.objects.filter(destinatario=usuario)
+        if not incluir_leidas:
+            queryset = queryset.exclude(estado='LEIDA')
+        return list(queryset.order_by('-prioridad', '-creada_el'))
     
-    def marcar_como_leida(self, notificacion_id):
+    def marcar_como_leida(self, notificacion_id, destinatario=None):
         from .models import NotificacionPropuesta
         from django.utils import timezone
-        notificacion = NotificacionPropuesta.objects.get(id=notificacion_id)
+
+        queryset = NotificacionPropuesta.objects.filter(id=notificacion_id)
+        if destinatario is not None:
+            queryset = queryset.filter(destinatario=destinatario)
+        notificacion = queryset.get()
         notificacion.estado = 'LEIDA'
         notificacion.leida_el = timezone.now()
         notificacion.save()
         return notificacion
 
+    def marcar_leidas_por_trueque(self, usuario, trueque_id, tipos=None):
+        from .models import NotificacionPropuesta
+        from django.utils import timezone
+
+        tipos = tipos or ("MATCH", "PROPUESTA")
+        ahora = timezone.now()
+        return NotificacionPropuesta.objects.filter(
+            destinatario=usuario,
+            trueque_id=trueque_id,
+            tipo__in=tipos,
+        ).exclude(estado="LEIDA").update(estado="LEIDA", leida_el=ahora)
+
 
 class MatchmakingRepository:
-    def buscar_matches(self, usuario, categorias_necesarias, categorias_ofrecidas):
-        if not categorias_necesarias or not categorias_ofrecidas:
+    def _construir_match_enriquecido(self, usuario, candidato, titulos_necesidades, titulos_talentos):
+        mis_talentos = list(
+            Publicacion.objects.filter(
+                usuario=usuario,
+                tipo="TALENTO",
+                esta_activa=True,
+                titulo__in=titulos_talentos,
+            )
+        )
+        mis_necesidades = list(
+            Publicacion.objects.filter(
+                usuario=usuario,
+                tipo="NECESIDAD",
+                esta_activa=True,
+                titulo__in=titulos_necesidades,
+            )
+        )
+        talentos_coincidentes = list(
+            Publicacion.objects.filter(
+                usuario=candidato,
+                tipo="TALENTO",
+                esta_activa=True,
+                titulo__in=titulos_necesidades,
+            )
+        )
+        necesidades_coincidentes = list(
+            Publicacion.objects.filter(
+                usuario=candidato,
+                tipo="NECESIDAD",
+                esta_activa=True,
+                titulo__in=titulos_talentos,
+            )
+        )
+
+        publicaciones_sugeridas = []
+        for mi_nec in mis_necesidades:
+            for su_tal in talentos_coincidentes:
+                if mi_nec.titulo == su_tal.titulo:
+                    publicaciones_sugeridas.append(
+                        {"mi_pub_id": mi_nec.id, "su_pub_id": su_tal.id}
+                    )
+        for mi_tal in mis_talentos:
+            for su_nec in necesidades_coincidentes:
+                if mi_tal.titulo == su_nec.titulo:
+                    publicaciones_sugeridas.append(
+                        {"mi_pub_id": mi_tal.id, "su_pub_id": su_nec.id}
+                    )
+
+        return {
+            "usuario": candidato,
+            "talentos_coincidentes": talentos_coincidentes,
+            "necesidades_coincidentes": necesidades_coincidentes,
+            "publicaciones_sugeridas": publicaciones_sugeridas,
+        }
+
+    def buscar_matches(self, usuario, titulos_necesidades, titulos_talentos):
+        if not titulos_necesidades or not titulos_talentos:
             return []
 
-        return list(
+        candidatos = (
             Usuario.objects.filter(
                 publicaciones__tipo="TALENTO",
-                publicaciones__categoria__in=categorias_necesarias,
+                publicaciones__titulo__in=titulos_necesidades,
                 publicaciones__esta_activa=True,
             )
             .filter(
                 publicaciones__tipo="NECESIDAD",
-                publicaciones__categoria__in=categorias_ofrecidas,
+                publicaciones__titulo__in=titulos_talentos,
                 publicaciones__esta_activa=True,
             )
             .exclude(id=usuario.id)
             .distinct()
         )
+
+        return [
+            self._construir_match_enriquecido(
+                usuario, candidato, titulos_necesidades, titulos_talentos
+            )
+            for candidato in candidatos
+        ]
     
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_seleccionada):
         """
@@ -225,24 +369,83 @@ class MatchmakingRepository:
     
     def buscar_matches_por_publicacion(self, usuario, publicacion):
         """
-        Busca usuarios que tengan ofertas complementarias a una publicación específica.
-        Si la publicación es un TALENTO, busca usuarios que tengan NECESIDADES en esa categoría.
-        Si la publicación es una NECESIDAD, busca usuarios que tengan TALENTOS en esa categoría.
+        Busca matches complementarios por título de la publicación seleccionada.
+        Si es TALENTO, busca usuarios con NECESIDAD del mismo título (y viceversa).
         """
-        if not publicacion or not publicacion.categoria:
+        if not publicacion or not publicacion.titulo:
             return []
-        
+
         tipo_buscado = "NECESIDAD" if publicacion.tipo == "TALENTO" else "TALENTO"
-        
-        # Buscar usuarios que tengan publicaciones del tipo complementario en la misma categoría
-        usuarios_con_match = list(
+        tipo_propio = "TALENTO" if publicacion.tipo == "NECESIDAD" else "NECESIDAD"
+
+        candidatos = (
             Usuario.objects.filter(
                 publicaciones__tipo=tipo_buscado,
-                publicaciones__categoria=publicacion.categoria,
+                publicaciones__titulo=publicacion.titulo,
                 publicaciones__esta_activa=True,
             )
             .exclude(id=usuario.id)
             .distinct()
         )
-        
-        return usuarios_con_match
+
+        resultados = []
+        for candidato in candidatos:
+            pubs_complementarias = list(
+                Publicacion.objects.filter(
+                    usuario=candidato,
+                    tipo=tipo_buscado,
+                    titulo=publicacion.titulo,
+                    esta_activa=True,
+                )
+            )
+            mis_complementarias = list(
+                Publicacion.objects.filter(
+                    usuario=usuario,
+                    tipo=tipo_propio,
+                    esta_activa=True,
+                )
+            )
+            titulos_mis_complementarias = {pub.titulo for pub in mis_complementarias}
+            talentos_coincidentes = []
+            necesidades_coincidentes = []
+            if tipo_buscado == "TALENTO":
+                talentos_coincidentes = pubs_complementarias
+                necesidades_coincidentes = list(
+                    Publicacion.objects.filter(
+                        usuario=candidato,
+                        tipo="NECESIDAD",
+                        titulo__in=titulos_mis_complementarias,
+                        esta_activa=True,
+                    )
+                )
+            else:
+                necesidades_coincidentes = pubs_complementarias
+                talentos_coincidentes = list(
+                    Publicacion.objects.filter(
+                        usuario=candidato,
+                        tipo="TALENTO",
+                        titulo__in=titulos_mis_complementarias,
+                        esta_activa=True,
+                    )
+                )
+
+            if not talentos_coincidentes or not necesidades_coincidentes:
+                continue
+
+            titulos_necesidades = (
+                [publicacion.titulo]
+                if publicacion.tipo == "NECESIDAD"
+                else [pub.titulo for pub in necesidades_coincidentes]
+            )
+            titulos_talentos = (
+                [publicacion.titulo]
+                if publicacion.tipo == "TALENTO"
+                else [pub.titulo for pub in talentos_coincidentes]
+            )
+            resultados.append(
+                self._construir_match_enriquecido(
+                    usuario, candidato, titulos_necesidades, titulos_talentos
+                )
+            )
+
+        return resultados

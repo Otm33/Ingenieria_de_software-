@@ -80,9 +80,19 @@
           <h2 class="page-title">{{ detallePerfil?.nombre_real || 'Miembro' }}</h2>
           <p class="page-description">Informacion publica del miembro. Solo lectura.</p>
         </div>
-        <button class="button button--secondary" type="button" @click="volverAlDirectorio">
-          Volver
-        </button>
+        <div class="page-header__actions">
+          <button
+            v-if="puedeEnviarPropuesta"
+            class="button button--primary"
+            type="button"
+            @click="abrirSelectorModo"
+          >
+            Realizar trueque
+          </button>
+          <button class="button button--secondary" type="button" @click="volverAlDirectorio">
+            Volver
+          </button>
+        </div>
       </div>
 
       <section class="panel">
@@ -122,10 +132,27 @@
             </div>
 
             <div class="perfil-publico__seccion">
-              <h4>Resenas ({{ detallePerfil.cantidad_resenas || 0 }})</h4>
+              <h4>Necesidades activas ({{ necesidadesActivas.length }})</h4>
+              <div v-if="necesidadesActivas.length" class="publicaciones-publicas">
+                <article
+                  v-for="pub in necesidadesActivas"
+                  :key="pub.id"
+                  class="publicacion-publica publicacion-publica--necesidad"
+                >
+                  <h5>{{ pub.titulo }}</h5>
+                  <p>{{ pub.descripcion }}</p>
+                  <span class="categoria">{{ pub.categoria }}</span>
+                </article>
+              </div>
+              <div v-else class="empty-state">Este miembro no tiene necesidades activas publicadas.</div>
+            </div>
+
+            <div class="perfil-publico__seccion">
+              <h4>Resenas ({{ cantidadResenasPublicas }})</h4>
               <div v-if="detallePerfil.resenas?.length" class="resenas-publicas">
                 <article v-for="resena in detallePerfil.resenas" :key="resena.id" class="resena-publica">
                   <p class="resena-publica__estrellas">{{ '★'.repeat(resena.estrellas) }}</p>
+                  <p class="resena-publica__autor">por @{{ nombreCalificador(resena) }}</p>
                   <p class="resena-publica__comentario">{{ resena.comentario }}</p>
                 </article>
               </div>
@@ -135,13 +162,72 @@
         </div>
       </section>
     </template>
+
+    <!-- Selector de modo para propuesta desde Comunidad -->
+    <div
+      v-if="mostrarSelectorModo"
+      class="modal-overlay"
+      @click.self="cerrarSelectorModo"
+    >
+      <div class="modal-content modal-content--modo-propuesta">
+        <div class="modal-header">
+          <h3 class="modal-title">¿Cómo quieres truequear?</h3>
+          <button class="modal-close" type="button" aria-label="Cerrar" @click="cerrarSelectorModo">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="modo-propuesta-intro">
+            Elige cómo quieres intercambiar con <strong>{{ detallePerfil?.nombre_real }}</strong>.
+            Cada opción define qué publicaciones puedes seleccionar.
+          </p>
+          <div class="modo-propuesta-opciones">
+            <button
+              class="modo-propuesta-btn"
+              type="button"
+              @click="elegirModoPropuesta('pedir_ayuda')"
+            >
+              <span class="modo-propuesta-btn__titulo">Quiero que me ayude</span>
+              <span class="modo-propuesta-btn__detalle">
+                Elijo mi necesidad y su talento · Impacto: −1 h para mí
+              </span>
+            </button>
+            <button
+              class="modo-propuesta-btn"
+              type="button"
+              @click="elegirModoPropuesta('ofrecer_ayuda')"
+            >
+              <span class="modo-propuesta-btn__titulo">Quiero ayudarle</span>
+              <span class="modo-propuesta-btn__detalle">
+                Elijo mi talento y su necesidad · Impacto: +1 h para mí
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup>
-import { computed, inject, onMounted, ref } from 'vue';
+/*
+ * Checklist validación manual Fase 2 — Comunidad (dos modos de propuesta):
+ * TEST M1 — Quiero que me ayude
+ *   [ ] Solo mis NECESIDADES en el primer select
+ *   [ ] Solo TALENTOS del vecino en el segundo
+ *   [ ] No se puede elegir NECESIDAD del vecino
+ *   [ ] Impacto muestra −1 h para mí
+ *   [ ] Propuesta llega al vecino con mensaje coherente
+ *   [ ] Aceptar → confirmar ×2 → saldo: yo −1, vecino +1
+ * TEST M2 — Quiero ayudarle
+ *   [ ] Solo mis TALENTOS / NECESIDADES del vecino
+ *   [ ] Impacto +1 h · Tras finalizar: yo +1, vecino −1
+ * TEST M3 — Sin publicaciones del tipo requerido → mensaje claro, submit deshabilitado
+ * TEST M4 — Match automático sin cambios (TALENTO+TALENTO, 0 h, dos parejas)
+ * TEST M5 — Perfil / Cartelera sin regresiones
+ */
+import { computed, inject, onMounted, ref, watch } from 'vue';
 
 const userController = inject('userController');
+const hu4 = inject('hu4', null);
 
 const AVATAR_COLORS = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
 
@@ -152,13 +238,50 @@ const cargando = ref(true);
 const cargandoDetalle = ref(false);
 const error = ref('');
 const errorDetalle = ref('');
+const mostrarSelectorModo = ref(false);
+const sesionLocalId = ref(null)
+const usuarioActualId = computed(() => hu4?.usuarioActualId?.value ?? sesionLocalId.value)
 
 const totalMiembrosActivos = computed(() => miembros.value.filter((m) => m.es_miembro_activo).length);
+
+const puedeEnviarPropuesta = computed(() => {
+  const perfilId = detallePerfil.value?.usuario?.id
+  return Boolean(perfilId && usuarioActualId.value && perfilId !== usuarioActualId.value)
+});
+
+const sincronizarSesion = async () => {
+  if (hu4?.usuarioActualId?.value) {
+    sesionLocalId.value = hu4.usuarioActualId.value
+    return
+  }
+  const sesion = await userController.obtenerSesionActual()
+  sesionLocalId.value = sesion?.id ?? null
+};
 
 const talentosActivos = computed(() => {
   if (!detallePerfil.value?.publicaciones) return [];
   return detallePerfil.value.publicaciones.filter((pub) => pub.tipo === 'TALENTO');
 });
+
+const necesidadesActivas = computed(() => {
+  if (!detallePerfil.value?.publicaciones) return [];
+  return detallePerfil.value.publicaciones.filter((pub) => pub.tipo === 'NECESIDAD');
+});
+
+const cantidadResenasPublicas = computed(() => {
+  if (!detallePerfil.value) return 0;
+  if (typeof detallePerfil.value.cantidad_resenas === 'number') {
+    return detallePerfil.value.cantidad_resenas;
+  }
+  return detallePerfil.value.resenas?.length ?? 0;
+});
+
+const nombreCalificador = (resena) => {
+  if (resena.calificador_username) return resena.calificador_username;
+  if (resena.calificador?.username) return resena.calificador.username;
+  if (resena.calificador_nombre) return resena.calificador_nombre;
+  return 'usuario';
+};
 
 const getInitials = (nombreReal, username) => {
   const nombre = nombreReal || username || 'U';
@@ -206,7 +329,41 @@ const volverAlDirectorio = () => {
   vista.value = 'directorio';
   detallePerfil.value = null;
   errorDetalle.value = '';
+  mostrarSelectorModo.value = false;
 };
 
-onMounted(cargarComunidad);
+const abrirSelectorModo = () => {
+  if (!detallePerfil.value) return;
+  mostrarSelectorModo.value = true;
+};
+
+const cerrarSelectorModo = () => {
+  mostrarSelectorModo.value = false;
+};
+
+const elegirModoPropuesta = async (modo) => {
+  if (!hu4?.abrirModalPropuesta || !detallePerfil.value) return;
+
+  mostrarSelectorModo.value = false;
+
+  const misPublicaciones = await userController.obtenerMisPublicaciones();
+  const config = {
+    receptorId: detallePerfil.value.usuario.id,
+    receptorNombre: detallePerfil.value.nombre_real,
+    misPublicaciones,
+    publicacionesVecino: detallePerfil.value.publicaciones || [],
+    modoPropuesta: modo,
+    tipoMiPublicacion: modo === 'pedir_ayuda' ? 'NECESIDAD' : 'TALENTO',
+    tipoVecinoPublicacion: modo === 'pedir_ayuda' ? 'TALENTO' : 'NECESIDAD',
+  };
+
+  await hu4.abrirModalPropuesta(config);
+};
+
+watch(vista, sincronizarSesion)
+
+onMounted(async () => {
+  await sincronizarSesion()
+  await cargarComunidad()
+});
 </script>

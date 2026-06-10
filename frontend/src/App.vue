@@ -4,11 +4,9 @@
       <div class="topbar__inner">
         <nav class="nav nav--main" aria-label="Navegacion principal">
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'cartelera'" title="Cartelera">
-            
             <span>Cartelera</span>
           </button>
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'publicar'" title="Publicar">
-            
             <span>Publicar</span>
           </button>
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'comunidad'" title="Comunidad">
@@ -22,6 +20,17 @@
         </nav>
 
         <div v-if="usuarioActual" class="session-box">
+          <button
+            class="nav__link nav__link--icon nav__link--notificaciones"
+            type="button"
+            title="Notificaciones"
+            @click="abrirPanelNotificaciones"
+          >
+            <span>Notificaciones</span>
+            <span v-if="notificacionesAccionables.length" class="nav-badge">
+              {{ notificacionesAccionables.length }}
+            </span>
+          </button>
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'perfil'" title="Mi Perfil">
             <span>Perfil</span>
           </button>
@@ -41,7 +50,6 @@
             <h2 class="panel__title">Iniciar sesion</h2>
           </div>
           <form class="panel__body" @submit.prevent="iniciarSesion">
-            <!-- CAMBIO AUTH: el login aparece primero al entrar a http://127.0.0.1:5173/. -->
             <div class="form-grid">
               <div class="form-group">
                 <label for="login_username">Usuario</label>
@@ -97,16 +105,48 @@
         <Cartelera v-else />
       </template>
     </main>
+
+    <ModalNotificaciones
+      v-model:visible="mostrarModalNotificaciones"
+      :notificaciones="notificacionesVisibles"
+      @realizar-trueque="abrirPropuestaDesdeNotificacion"
+      @actualizado="cargarDatosHu4"
+    />
+
+    <ModalPropuesta
+      v-model:visible="mostrarModalPropuesta"
+      :receptor-id="propuestaConfig.receptorId"
+      :receptor-nombre="propuestaConfig.receptorNombre"
+      :mis-publicaciones="propuestaConfig.misPublicaciones"
+      :publicaciones-vecino="propuestaConfig.publicacionesVecino"
+      :modo-propuesta="propuestaConfig.modoPropuesta"
+      :tipo-mi-publicacion="propuestaConfig.tipoMiPublicacion"
+      :tipo-vecino-publicacion="propuestaConfig.tipoVecinoPublicacion"
+      :publicacion-emisor-preseleccionada="propuestaConfig.publicacionEmisorId"
+      :publicacion-receptor-preseleccionada="propuestaConfig.publicacionReceptorId"
+      @creada="onPropuestaCreada"
+    />
+
+    <ModalResena
+      v-model:visible="mostrarModalResena"
+      :trueque-id="truequeResena?.id"
+      :contraparte-nombre="truequeResena?.contraparteNombre"
+      :estado-trueque="truequeResena?.estado"
+      @enviada="onResenaEnviada"
+    />
   </div>
 </template>
 
 <script setup>
-import { inject, onMounted, reactive, ref } from 'vue'
+import { computed, inject, onMounted, provide, reactive, ref, watch } from 'vue'
 import AdminCSV from './views/AdminCSV.vue'
 import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
 import Perfil from './views/Perfil.vue'
 import Comunidad from './views/Comunidad.vue'
+import ModalNotificaciones from './components/ModalNotificaciones.vue'
+import ModalPropuesta from './components/ModalPropuesta.vue'
+import ModalResena from './components/ModalResena.vue'
 
 const userController = inject('userController')
 const usuarioActual = ref(null)
@@ -118,10 +158,245 @@ const tipoRegistroActivo = ref('')
 const mensajeBienvenida = ref('')
 const loginForm = reactive({ username: '', password: '' })
 
+const notificacionesVisibles = ref([])
+const misTrueques = ref([])
+const mostrarModalNotificaciones = ref(false)
+const mostrarModalPropuesta = ref(false)
+const mostrarModalResena = ref(false)
+const truequeResena = ref(null)
+
+const propuestaConfig = reactive({
+  receptorId: null,
+  receptorNombre: '',
+  misPublicaciones: [],
+  publicacionesVecino: [],
+  modoPropuesta: '',
+  tipoMiPublicacion: '',
+  tipoVecinoPublicacion: '',
+  publicacionEmisorId: null,
+  publicacionReceptorId: null,
+  truequeIdOrigen: null,
+})
+
+const limpiarPropuestaConfig = () => {
+  Object.assign(propuestaConfig, {
+    receptorId: null,
+    receptorNombre: '',
+    misPublicaciones: [],
+    publicacionesVecino: [],
+    modoPropuesta: '',
+    tipoMiPublicacion: '',
+    tipoVecinoPublicacion: '',
+    publicacionEmisorId: null,
+    publicacionReceptorId: null,
+    truequeIdOrigen: null,
+  })
+}
+
+const filtrarNotificacionesAccionables = (notificaciones) => (
+  (notificaciones || []).filter((notif) => notif.estado === 'PENDIENTE')
+)
+
+const notificacionesAccionables = computed(() => notificacionesVisibles.value)
+
+const obtenerContraparteNombre = (trueque) => {
+  if (!usuarioActual.value) return ''
+  if (Number(trueque.emisor) === Number(usuarioActual.value.id)) return trueque.receptor_nombre
+  return trueque.emisor_nombre
+}
+
+let refrescarPerfilFn = null
+
+const registrarRefrescarPerfil = (fn) => {
+  refrescarPerfilFn = fn
+}
+
+const refrescarPerfil = async () => {
+  if (refrescarPerfilFn) {
+    await refrescarPerfilFn()
+  }
+}
+
+const revisarResenaPendiente = () => {
+  if (mostrarModalResena.value || mostrarModalNotificaciones.value) return
+
+  const pendiente = misTrueques.value.find((trueque) => trueque.pendiente_resena)
+  if (pendiente) {
+    abrirModalResena(pendiente)
+    return
+  }
+  truequeResena.value = null
+}
+
+const cargarDatosHu4 = async (opciones = {}) => {
+  const { omitirModalesAutomaticos = false } = opciones
+  if (!usuarioActual.value) return
+
+  try {
+    const [notificacionesData, truequesData, misPublicaciones] = await Promise.all([
+      userController.obtenerNotificaciones(false),
+      userController.obtenerMisTrueques(),
+      userController.obtenerMisPublicaciones(),
+    ])
+
+    misTrueques.value = truequesData.trueques || []
+    notificacionesVisibles.value = filtrarNotificacionesAccionables(
+      notificacionesData.notificaciones,
+    )
+
+    if (!omitirModalesAutomaticos) {
+      // Login normal: notificaciones primero; reseña solo si no hay panel de notificaciones.
+      if (notificacionesVisibles.value.length && !mostrarModalPropuesta.value && !mostrarModalNotificaciones.value) {
+        mostrarModalNotificaciones.value = true
+      }
+      revisarResenaPendiente()
+    }
+
+    return { misPublicaciones }
+  } catch {
+    notificacionesVisibles.value = []
+    misTrueques.value = []
+  }
+}
+
+const abrirModalPropuesta = async (config) => {
+  const misPublicaciones = config.misPublicaciones?.length
+    ? config.misPublicaciones
+    : await userController.obtenerMisPublicaciones()
+
+  Object.assign(propuestaConfig, {
+    receptorId: config.receptorId,
+    receptorNombre: config.receptorNombre || '',
+    misPublicaciones,
+    publicacionesVecino: config.publicacionesVecino || [],
+    modoPropuesta: config.modoPropuesta || '',
+    tipoMiPublicacion: config.tipoMiPublicacion || '',
+    tipoVecinoPublicacion: config.tipoVecinoPublicacion || '',
+    publicacionEmisorId: config.publicacionEmisorId || null,
+    publicacionReceptorId: config.publicacionReceptorId || null,
+    truequeIdOrigen: config.truequeIdOrigen || null,
+  })
+  mostrarModalPropuesta.value = true
+}
+
+const abrirModalPropuestaDesdeTrueque = async (trueque) => {
+  if (!usuarioActual.value || !trueque) return
+
+  const soyEmisor = Number(trueque.emisor) === Number(usuarioActual.value.id)
+  const contraparteId = soyEmisor ? trueque.receptor : trueque.emisor
+  const contraparteNombre = obtenerContraparteNombre(trueque)
+  const misPublicaciones = await userController.obtenerMisPublicaciones()
+  let publicacionesVecino = []
+
+  try {
+    const perfil = await userController.obtenerPerfilUsuario(contraparteId)
+    publicacionesVecino = perfil.publicaciones || []
+  } catch {
+    publicacionesVecino = []
+  }
+
+  const miPublicacion = soyEmisor ? trueque.publicacion_emisor : trueque.publicacion_receptor
+  const pubVecino = soyEmisor ? trueque.publicacion_receptor : trueque.publicacion_emisor
+
+  await abrirModalPropuesta({
+    receptorId: contraparteId,
+    receptorNombre: contraparteNombre,
+    misPublicaciones,
+    publicacionesVecino,
+    publicacionEmisorId: miPublicacion?.id || null,
+    publicacionReceptorId: pubVecino?.id || null,
+    tipoMiPublicacion: miPublicacion?.tipo || '',
+    tipoVecinoPublicacion: pubVecino?.tipo || '',
+    truequeIdOrigen: trueque.id,
+  })
+}
+
+const abrirPropuestaDesdeNotificacion = async (notif) => {
+  mostrarModalNotificaciones.value = false
+
+  const trueque = misTrueques.value.find(
+    (item) => Number(item.id) === Number(notif.trueque_id),
+  )
+  if (trueque) {
+    await abrirModalPropuestaDesdeTrueque(trueque)
+    return
+  }
+
+  let publicacionesVecino = []
+  try {
+    const perfil = await userController.obtenerPerfilUsuario(notif.remitente_id)
+    publicacionesVecino = perfil.publicaciones || []
+  } catch {
+    publicacionesVecino = []
+  }
+
+  await abrirModalPropuesta({
+    receptorId: notif.remitente_id,
+    receptorNombre: notif.remitente_nombre,
+    misPublicaciones: await userController.obtenerMisPublicaciones(),
+    publicacionesVecino,
+    truequeIdOrigen: notif.trueque_id || null,
+  })
+}
+
+const abrirPanelNotificaciones = async () => {
+  await cargarDatosHu4()
+  mostrarModalNotificaciones.value = true
+}
+
+const onPropuestaCreada = async () => {
+  const truequeId = propuestaConfig.truequeIdOrigen
+  if (truequeId) {
+    try {
+      await userController.marcarNotificacionesTruequeLeidas(truequeId)
+    } catch {
+      // Ignorar errores al marcar notificaciones del match.
+    }
+  }
+  propuestaConfig.truequeIdOrigen = null
+  await cargarDatosHu4()
+}
+
+const onResenaEnviada = async () => {
+  mostrarModalResena.value = false
+  truequeResena.value = null
+  await cargarDatosHu4()
+  await refrescarPerfil()
+}
+
+const abrirModalResena = (trueque) => {
+  truequeResena.value = {
+    id: trueque.id,
+    contraparteNombre: obtenerContraparteNombre(trueque),
+    estado: trueque.estado,
+  }
+  mostrarModalResena.value = true
+}
+
+const abrirModalResenaPrioritario = (trueque) => {
+  mostrarModalNotificaciones.value = false
+  mostrarModalPropuesta.value = false
+  abrirModalResena(trueque)
+}
+
+provide('hu4', {
+  abrirModalPropuesta,
+  abrirModalPropuestaDesdeTrueque,
+  abrirModalResena,
+  abrirModalResenaPrioritario,
+  refrescarDatosHu4: cargarDatosHu4,
+  registrarRefrescarPerfil,
+  refrescarPerfil,
+  misTrueques,
+  usuarioActualId: computed(() => usuarioActual.value?.id ?? null),
+})
+
 const cargarSesion = async () => {
   try {
-    // CAMBIO AUTH: la app decide que mostrar segun la sesion real de Django.
     usuarioActual.value = await userController.obtenerSesionActual()
+    if (usuarioActual.value) {
+      await cargarDatosHu4()
+    }
   } finally {
     cargandoSesion.value = false
   }
@@ -132,12 +407,12 @@ const iniciarSesion = async () => {
   loginError.value = ''
 
   try {
-    // CAMBIO AUTH: despues de iniciar sesion se muestra la cartelera normal.
     usuarioActual.value = await userController.iniciarSesion(loginForm)
     seccionActiva.value = 'cartelera'
     tipoRegistroActivo.value = ''
     loginForm.username = ''
     loginForm.password = ''
+    await cargarDatosHu4()
   } catch (error) {
     loginError.value = error.message || 'No se pudo iniciar sesion.'
   } finally {
@@ -155,6 +430,7 @@ const iniciarSesionDespuesDeRegistro = async (credenciales) => {
       tipoRegistroActivo.value = ''
       loginForm.username = ''
       loginForm.password = ''
+      await cargarDatosHu4()
       return
     }
 
@@ -178,7 +454,24 @@ const cerrarSesion = async () => {
   await userController.cerrarSesion()
   usuarioActual.value = null
   seccionActiva.value = 'cartelera'
+  notificacionesVisibles.value = []
+  misTrueques.value = []
+  mostrarModalNotificaciones.value = false
+  mostrarModalPropuesta.value = false
+  mostrarModalResena.value = false
 }
+
+watch(seccionActiva, async (nueva) => {
+  if (usuarioActual.value && ['perfil', 'comunidad', 'cartelera'].includes(nueva)) {
+    await cargarDatosHu4()
+  }
+})
+
+watch(mostrarModalPropuesta, (visible) => {
+  if (!visible) {
+    limpiarPropuestaConfig()
+  }
+})
 
 onMounted(cargarSesion)
 </script>

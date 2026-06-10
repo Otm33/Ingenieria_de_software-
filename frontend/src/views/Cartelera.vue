@@ -254,9 +254,23 @@
             </article>
           </div>
 
-          <p v-if="publicacionSeleccionadaInfo" class="seleccion-info">
-            Has seleccionado: {{ publicacionSeleccionadaInfo.titulo }} — ofrecido por {{ publicacionSeleccionadaInfo.usuarioNombreReal || 'Usuario' }}
-          </p>
+          <div v-if="publicacionSeleccionadaInfo" class="seleccion-info">
+            <p>
+              Has seleccionado: {{ publicacionSeleccionadaInfo.titulo }} — ofrecido por
+              {{ publicacionSeleccionadaInfo.usuarioNombreReal || 'Usuario' }}
+            </p>
+            <button
+              class="button button--primary button--small"
+              type="button"
+              :disabled="buscandoCoincidencias"
+              @click="verCoincidencias"
+            >
+              {{ buscandoCoincidencias ? 'Buscando...' : 'Ver coincidencias' }}
+            </button>
+            <p v-if="feedbackCoincidencias" :class="['alert', coincidenciasExitosas ? 'alert--success' : 'alert--error']">
+              {{ feedbackCoincidencias }}
+            </p>
+          </div>
         </template>
 
         <div v-else class="empty-state">
@@ -285,6 +299,7 @@ const emit = defineEmits(['volver-cartelera']);
 const { modoPublicar } = toRefs(props);
 
 const userController = inject('userController');
+const hu4 = inject('hu4', null);
 const publicaciones = ref([]);
 const misPublicaciones = ref([]);
 const usuarioActualId = ref(null);
@@ -302,6 +317,9 @@ const publicacionExitosa = ref(false);
 const feedbackEstadoPublicacion = ref('');
 const feedbackEstadoExitoso = ref(false);
 const procesandoEstadoId = ref(null);
+const buscandoCoincidencias = ref(false);
+const feedbackCoincidencias = ref('');
+const coincidenciasExitosas = ref(false);
 const formPublicacion = reactive({
   tipo: 'TALENTO',
   titulo: '',
@@ -408,6 +426,68 @@ const seleccionarPublicacion = (publicacionId) => {
   publicacionSeleccionadaId.value = publicacionSeleccionadaId.value === publicacionId
     ? null
     : publicacionId;
+  feedbackCoincidencias.value = '';
+  coincidenciasExitosas.value = false;
+};
+
+const verCoincidencias = async () => {
+  const pub = publicacionSeleccionadaInfo.value;
+  if (!pub || !hu4?.abrirModalPropuesta) return;
+
+  buscandoCoincidencias.value = true;
+  feedbackCoincidencias.value = '';
+  coincidenciasExitosas.value = false;
+
+  try {
+    const coincidencia = await userController.verificarCoincidenciaPorTitulo(pub.id);
+    const { matches } = await userController.obtenerMatchesEnriquecidos(pub.id);
+
+    if (!coincidencia.tiene_coincidencia && !matches.length) {
+      feedbackCoincidencias.value = 'No se encontraron coincidencias por título para esta publicación.';
+      return;
+    }
+
+    const tipoVecino = pub.tipo;
+    const tipoMi = pub.tipo === 'TALENTO' ? 'NECESIDAD' : 'TALENTO';
+    const misPublicaciones = await userController.obtenerMisPublicaciones();
+
+    if (matches.length) {
+      const match = matches[0];
+      const sugerencia = match?.publicacionesSugeridas?.[0];
+      const perfilVecino = await userController.obtenerPerfilUsuario(match.usuario.id);
+
+      await hu4.abrirModalPropuesta({
+        receptorId: match.usuario.id,
+        receptorNombre: match.usuario.nombreReal,
+        misPublicaciones,
+        publicacionesVecino: perfilVecino.publicaciones || [],
+        tipoMiPublicacion: tipoMi,
+        tipoVecinoPublicacion: tipoVecino,
+        publicacionEmisorId: sugerencia?.mi_pub_id || coincidencia.publicaciones_coincidentes?.[0]?.id || null,
+        publicacionReceptorId: sugerencia?.su_pub_id || pub.id,
+      });
+    } else {
+      const perfilVecino = await userController.obtenerPerfilUsuario(pub.usuario);
+
+      await hu4.abrirModalPropuesta({
+        receptorId: pub.usuario,
+        receptorNombre: perfilVecino.nombre_real,
+        misPublicaciones,
+        publicacionesVecino: perfilVecino.publicaciones || [],
+        tipoMiPublicacion: tipoMi,
+        tipoVecinoPublicacion: tipoVecino,
+        publicacionEmisorId: coincidencia.publicaciones_coincidentes?.[0]?.id || null,
+        publicacionReceptorId: pub.id,
+      });
+    }
+
+    coincidenciasExitosas.value = true;
+    feedbackCoincidencias.value = 'Se encontró una coincidencia. Completa la propuesta de trueque.';
+  } catch (err) {
+    feedbackCoincidencias.value = err.message || 'No se pudieron buscar coincidencias.';
+  } finally {
+    buscandoCoincidencias.value = false;
+  }
 };
 
 const limpiarPublicacion = () => {

@@ -224,6 +224,12 @@ a { color: inherit; }
   margin-bottom: 20px;
 }
 
+.page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--accent);
@@ -859,4 +865,215 @@ a { color: inherit; }
   color: #7a4a00;
   background: #fff3d8;
   border: 1px solid #ffe9bd;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.match-item--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.match-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.match-item-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.match-item-hint {
+  color: var(--primary-dark);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.match-detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.match-detalle-pareja {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+}
+
+.match-detalle-pareja--recibo {
+  border-left-color: var(--primary);
+}
+
+.match-detalle-pareja--doy {
+  border-left-color: var(--primary-dark);
+}
+
+.match-detalle-line {
+  display: block;
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.match-detalle-line--secundaria {
+  color: var(--text-muted);
+}
+
+.match-detalle-label {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.modal-content--modo-propuesta {
+  max-width: 480px;
+}
+
+.modo-propuesta-intro {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.modo-propuesta-opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modo-propuesta-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.modo-propuesta-btn:hover {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+.modo-propuesta-btn__titulo {
+  color: var(--primary-dark);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.modo-propuesta-btn__detalle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.publicacion-publica--necesidad {
+  border-left: 3px solid var(--primary);
+}
+
+.trueques-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trueque-card {
+  padding: 14px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.trueque-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.trueque-card__estado {
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e9ecef;
+}
+
+.trueque-card__estado--aceptado { background: #d4edda; color: #155724; }
+.trueque-card__estado--finalizado { background: #cce5ff; color: #004085; }
+.trueque-card__estado--rechazado { background: #f8d7da; color: #721c24; }
+.trueque-card__estado--pendiente { background: #fff3cd; color: #856404; }
+
+.trueque-card__pubs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.trueque-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trueque-espera {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-style: italic;
+}
+
+.nav__link--notificaciones {
+  position: relative;
+  gap: 6px;
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
 }
