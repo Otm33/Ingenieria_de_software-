@@ -279,12 +279,25 @@
       </div>
     </section>
 
+    <ModalConfirmacion
+      :visible="mostrarModalConfirmacion"
+      @update:visible="mostrarModalConfirmacion = $event"
+      :titulo="datosModalConfirmacion.titulo"
+      :mensaje="datosModalConfirmacion.mensaje"
+      :submensaje="datosModalConfirmacion.submensaje"
+      :textoConfirmar="datosModalConfirmacion.textoConfirmar"
+      :textoCancelar="datosModalConfirmacion.textoCancelar"
+      :claseBotonConfirmar="datosModalConfirmacion.claseBotonConfirmar"
+      @confirmar="confirmarCambioEstado"
+      @cancelar="mostrarModalConfirmacion = false"
+    />
   </section>
 </template>
 
 <script setup>
 import { computed, inject, onMounted, reactive, ref, toRefs, watch } from 'vue';
 import { CATEGORIAS, titulosParaCategoria } from '../data/catalogoServicios.js';
+import ModalConfirmacion from '../components/ModalConfirmacion.vue';
 
 const props = defineProps({
   modoPublicar: {
@@ -317,6 +330,17 @@ const publicacionExitosa = ref(false);
 const feedbackEstadoPublicacion = ref('');
 const feedbackEstadoExitoso = ref(false);
 const procesandoEstadoId = ref(null);
+const mostrarModalConfirmacion = ref(false);
+const datosModalConfirmacion = ref({
+  titulo: '',
+  mensaje: '',
+  submensaje: '',
+  textoConfirmar: 'Confirmar',
+  textoCancelar: 'Cancelar',
+  claseBotonConfirmar: 'button--primary',
+  publicacion: null,
+  reactivar: false
+});
 const buscandoCoincidencias = ref(false);
 const feedbackCoincidencias = ref('');
 const coincidenciasExitosas = ref(false);
@@ -502,13 +526,32 @@ const volverACartelera = () => {
   emit('volver-cartelera');
 };
 
-const actualizarEstadoPublicacion = async (publicacion) => {
+const actualizarEstadoPublicacion = (publicacion) => {
   const reactivar = !publicacion.esta_activa;
-  const mensajeConfirmacion = reactivar
-    ? '¿Deseas reactivar esta publicación? Volverá a aparecer en la cartelera pública.'
-    : '¿Deseas pausar esta publicación? Dejará de aparecer en la cartelera pública.';
+  datosModalConfirmacion.value = {
+    titulo: reactivar ? 'Reactivar publicación' : 'Pausar publicación',
+    mensaje: reactivar
+    ? `¿Deseas reactivar esta publicación?`
+    : `¿Deseas pausar esta publicación?`,
+    submensaje: reactivar
+      ? 'Volverá a ser visible para otros usuarios en la cartelera y podrás recibir propuestas de trueque.'
+      : 'Tu publicación dejará de aparecer en la cartelera pública temporalmente. Podrás reactivarla cuando lo desees.',
+    textoConfirmar: reactivar ? 'Reactivar' : 'Pausar',
+    textoCancelar: 'Cancelar',
+    claseBotonConfirmar: reactivar ? 'button--primary' : 'button--secondary',
+    publicacion: publicacion,
+    reactivar: reactivar
+  };
+  
+  mostrarModalConfirmacion.value = true;
+};
 
-  if (!confirm(mensajeConfirmacion)) {
+const confirmarCambioEstado = async () => {
+  const { publicacion, reactivar } = datosModalConfirmacion.value;
+  
+  mostrarModalConfirmacion.value = false;
+
+  if (!publicacion) {
     return;
   }
 
@@ -520,8 +563,8 @@ const actualizarEstadoPublicacion = async (publicacion) => {
     await userController.actualizarEstadoPublicacion(publicacion.id, reactivar);
     feedbackEstadoExitoso.value = true;
     feedbackEstadoPublicacion.value = reactivar
-      ? 'Publicación reactivada correctamente.'
-      : 'Publicación pausada correctamente.';
+      ? '✅ Publicación reactivada correctamente. Ahora es visible en la cartelera.'
+      : '✅ Publicación pausada correctamente. Ya no aparece en la cartelera pública.';
     await cargarMisPublicaciones();
     await obtenerPublicaciones(false);
   } catch (err) {

@@ -879,9 +879,10 @@ a { color: inherit; }
 
 .modal-footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 16px;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+  padding-bottom: 20px;
 }
 
 .match-item--stacked {
