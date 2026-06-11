@@ -1,0 +1,68 @@
+@startuml Diagrama_Secuencia_HU5
+
+autonumber
+
+actor "Comercio" as Comercio
+actor "Cliente" as Cliente
+box "Cliente HTTP (futuro Vue)" #LightBlue
+    participant "Cliente API" as Client
+end box
+box "Backend (Django REST)" #LightYellow
+    participant "CatalogoComerciosView" as CatV
+    participant "EmitirVueltoComercialView" as EmitV
+    participant "PagarConSaldoView" as PagarV
+    participant "Usuario / SaldoComercial" as Models
+end box
+database "PostgreSQL" as DB
+
+note over Models: saldo_comercial separado de horas_de_vida\n(es_comercio=True para comercios)
+
+== Catálogo de comercios afiliados ==
+Cliente -> Client: GET /api/comercios/
+Client -> CatV: get(request) [IsAuthenticated]
+activate CatV
+CatV -> Models: Usuario.filter(es_comercio=True, is_active=True)
+Models -> DB: SELECT comercios
+CatV --> Client: lista UsuarioSerializer
+deactivate CatV
+
+== Escenario 2: Emisión de vuelto (comercio) ==
+Comercio -> Client: POST /api/comercio/emitir-vuelto/\n{cliente_id, monto_excedente}
+Client -> EmitV: post(request)
+activate EmitV
+
+alt request.user.es_comercio == False
+    EmitV --> Client: 403 "Solo comercios pueden emitir..."
+else Datos incompletos
+    EmitV --> Client: 400 "Faltan datos"
+else Emisión válida
+    EmitV -> EmitV: transaction.atomic()
+    EmitV -> Models: Usuario.select_for_update().get(cliente_id)
+    EmitV -> Models: cliente.saldo_comercial += monto\n(cliente.save())
+    note over EmitV: horas_de_vida NO se modifican
+    EmitV -> Models: SaldoComercial.create(EMISION)
+    Models -> DB: UPDATE usuario + INSERT movimiento
+    EmitV --> Client: "Saldo a favor comercial emitido correctamente"
+end
+deactivate EmitV
+
+== Escenario 3: Pago en otro comercio ==
+Cliente -> Client: POST /api/comercio/pagar/\n{comercio_id, monto}
+Client -> PagarV: post(request)
+activate PagarV
+
+alt comercio destino no es comercio
+    PagarV --> Client: 400 error
+else cliente.saldo_comercial < monto
+    PagarV --> Client: 400 "Saldo comercial insuficiente"
+else Pago OK
+    PagarV -> PagarV: transaction.atomic()
+    PagarV -> Models: cliente = request.user (select_for_update)
+    PagarV -> Models: cliente.saldo_comercial -= monto
+    EmitV -> Models: SaldoComercial.create(PAGO)
+    Models -> DB: UPDATE + INSERT auditoría
+    PagarV --> Client: "Pago procesado con éxito..."
+end
+deactivate PagarV
+
+@enduml
