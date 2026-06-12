@@ -1,5 +1,7 @@
 import csv
 from decimal import Decimal, InvalidOperation
+import random
+import string
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
@@ -24,6 +26,17 @@ from .repositories import (
     UsuarioRepository,
 )
 from .validators import contiene_palabra_prohibida
+
+
+def generar_codigo_confirmacion():
+    """Genera un código alfanumérico único de 8 caracteres."""
+    caracteres = string.ascii_uppercase + string.digits
+    while True:
+        codigo = ''.join(random.choice(caracteres) for _ in range(8))
+        # Verificar que el código no exista
+        from .models import AcuerdoTrueque
+        if not AcuerdoTrueque.objects.filter(codigo_confirmacion=codigo).exists():
+            return codigo
 
 CATEGORIAS_PUBLICACION = {
     "Mantenimiento, Reparaciones y Construcción",
@@ -247,8 +260,13 @@ class PublicacionService:
             if not puede_pausar:
                 raise BusinessError(mensaje)
 
-        publicacion.esta_activa = esta_activa
-        publicacion.save(update_fields=["esta_activa"])
+
+        # Usar update() directo para evitar validaciones del modelo save()
+
+        Publicacion.objects.filter(id=publicacion_id, usuario=usuario).update(esta_activa=esta_activa)
+        
+        # Recargar la publicación actualizada
+        publicacion = self.publicacion_repository.obtener_por_id_y_usuario(publicacion_id, usuario)
         if esta_activa:
             self._disparar_deteccion_matches(usuario)
         return publicacion
@@ -398,6 +416,10 @@ class TruequeService(TruequeInterface):
                 tipo="PROPUESTA",
             )
 
+        # Marcar todas las notificaciones MATCH de este trueque como leídas para ambos usuarios
+        # Esto evita que ambos usuarios sigan viendo la notificación MATCH después de crear una propuesta
+        self.notificacion_service.marcar_notificaciones_trueque_leidas_ambos_usuarios(trueque.id, tipos=("MATCH",))
+        
         return trueque
 
     def responder_propuesta(self, receptor, trueque_id, accion):
@@ -407,7 +429,8 @@ class TruequeService(TruequeInterface):
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
-            trueque.estado = "ACEPTADO"
+            trueque.estado = "EN_CURSO"
+            trueque.codigo_confirmacion = generar_codigo_confirmacion()
             self.trueque_repository.guardar(trueque)
             self.notificacion_service.actualizar_estado_propuesta(trueque, "ACEPTADA")
             return "Propuesta aceptada. Confirma la finalización cuando el servicio esté completo."
@@ -455,6 +478,19 @@ class TruequeService(TruequeInterface):
                     "mensaje": "Confirmación registrada. Esperando confirmación de la otra parte.",
                 }
 
+            # Pausar las necesidades de ambos usuarios ya que se cumplieron con el trueque
+            from .models import Publicacion
+            # Pausar todas las publicaciones de tipo NECESIDAD del emisor
+            necesidades_emisor = Publicacion.objects.filter(usuario=trueque.emisor, tipo='NECESIDAD', esta_activa=True)
+            for pub in necesidades_emisor:
+                pub.esta_activa = False
+                pub.save()
+            # Pausar todas las publicaciones de tipo NECESIDAD del receptor
+            necesidades_receptor = Publicacion.objects.filter(usuario=trueque.receptor, tipo='NECESIDAD', esta_activa=True)
+            for pub in necesidades_receptor:
+                pub.esta_activa = False
+                pub.save()
+
             # Usar método de negocio de AcuerdoTrueque para verificar si es intercambio mutuo
             if trueque.es_intercambio_mutuo():
                 trueque.estado = "FINALIZADO"
@@ -492,6 +528,83 @@ class TruequeService(TruequeInterface):
                 "impacto_horas": 1,
                 "habilitar_resena": True,
                 "mensaje": "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado.",
+            }
+
+
+    def validar_codigo_finalizacion(self, usuario, trueque_id, codigo):
+        """Valida el código de confirmación y finaliza el trueque si es correcto."""
+        with transaction.atomic():
+            try:
+                trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
+            except ObjectDoesNotExist:
+                raise BusinessError("Trueque no encontrado.", status_code=404)
+
+            # Verificar que el usuario es parte del trueque
+            if not trueque.participante(usuario):
+                raise BusinessError("No eres parte de este trueque.", status_code=403)
+
+            # Verificar que el trueque está en curso
+            if not trueque.esta_en_curso():
+                raise BusinessError("El trueque debe estar en curso para finalizar.", status_code=400)
+
+            # Verificar que el código sea correcto
+            if trueque.codigo_confirmacion != codigo:
+                raise BusinessError("Código de confirmación incorrecto.", status_code=400)
+
+            # Verificar que solo el receptor pueda introducir el código
+            if usuario == trueque.emisor:
+                raise BusinessError("Solo el receptor puede introducir el código del emisor.", status_code=403)
+
+            # Marcar ambas partes como confirmadas ya que el código valida el trueque
+            trueque.emisor_confirmado = True
+            trueque.receptor_confirmado = True
+
+            # Pausar las necesidades de ambos usuarios ya que se cumplieron con el trueque
+            from .models import Publicacion
+            # Pausar todas las publicaciones de tipo NECESIDAD del emisor
+            necesidades_emisor = Publicacion.objects.filter(usuario=trueque.emisor, tipo='NECESIDAD', esta_activa=True)
+            for pub in necesidades_emisor:
+                pub.esta_activa = False
+                pub.save()
+            # Pausar todas las publicaciones de tipo NECESIDAD del receptor
+            necesidades_receptor = Publicacion.objects.filter(usuario=trueque.receptor, tipo='NECESIDAD', esta_activa=True)
+            for pub in necesidades_receptor:
+                pub.esta_activa = False
+                pub.save()
+
+            # Verificar si es intercambio mutuo
+            if trueque.es_intercambio_mutuo():
+                trueque.estado = "FINALIZADO"
+                self.trueque_repository.guardar(trueque)
+                return {
+                    "saldo_transferido": False,
+                    "impacto_horas": 0,
+                    "habilitar_resena": True,
+                    "mensaje": (
+                        "Trueque mutuo finalizado. Intercambio equilibrado sin transferencia "
+                        "de horas. Sistema de reseñas habilitado."
+                    ),
+                }
+
+            # Para trueques no mutuos, transferir horas
+            prestador, receptor_servicio = self._identificar_roles_trueque(trueque)
+            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador.id)
+            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio.id)
+
+            # Transferir horas
+            prestador.horas_de_vida += 1
+            receptor_servicio.horas_de_vida -= 1
+            self.usuario_repository.guardar(prestador)
+            self.usuario_repository.guardar(receptor_servicio)
+
+            trueque.estado = "FINALIZADO"
+            self.trueque_repository.guardar(trueque)
+
+            return {
+                "saldo_transferido": True,
+                "impacto_horas": 1 if usuario == prestador else -1,
+                "habilitar_resena": True,
+                "mensaje": "Trueque finalizado exitosamente. Sistema de reseñas habilitado.",
             }
 
 
@@ -689,6 +802,14 @@ class NotificacionService:
         actualizadas = self.notificacion_repository.marcar_leidas_por_trueque(
             usuario,
             trueque_id,
+        )
+        return actualizadas
+    
+    def marcar_notificaciones_trueque_leidas_ambos_usuarios(self, trueque_id, tipos=None):
+        """Marca todas las notificaciones de un trueque como leídas para ambos usuarios."""
+        actualizadas = self.notificacion_repository.marcar_leidas_por_trueque_ambos_usuarios(
+            trueque_id,
+            tipos,
         )
         return actualizadas
 

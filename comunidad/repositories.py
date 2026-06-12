@@ -250,6 +250,18 @@ class NotificacionPropuestaRepository:
             trueque_id=trueque_id,
             tipo__in=tipos,
         ).exclude(estado="LEIDA").update(estado="LEIDA", leida_el=ahora)
+    
+    def marcar_leidas_por_trueque_ambos_usuarios(self, trueque_id, tipos=None):
+        """Marca todas las notificaciones de un trueque como leídas para ambos usuarios."""
+        from .models import NotificacionPropuesta
+        from django.utils import timezone
+
+        tipos = tipos or ("MATCH", "PROPUESTA")
+        ahora = timezone.now()
+        return NotificacionPropuesta.objects.filter(
+            trueque_id=trueque_id,
+            tipo__in=tipos,
+        ).exclude(estado="LEIDA").update(estado="LEIDA", leida_el=ahora)
 
 
 class MatchmakingRepository:

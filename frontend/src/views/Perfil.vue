@@ -152,6 +152,49 @@
                 <p v-if="mensajeEspera(trueque)" class="trueque-espera">
                   {{ mensajeEspera(trueque) }}
                 </p>
+                <div v-if="trueque.estado === 'EN_CURSO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
+                  <div v-if="Number(trueque.emisor) === Number(datosPerfil?.usuario?.id)" class="codigo-emisor">
+                    <span class="codigo-label">Código de confirmación:</span>
+                    <span class="codigo-valor">{{ trueque.codigo_confirmacion }}</span>
+                    <span class="codigo-instruccion">Comparte este código con {{ trueque.receptor_nombre }}</span>
+                  </div>
+                  <div v-else class="codigo-receptor">
+                    <span class="codigo-instruccion">Ingresa el código que te compartió {{ trueque.emisor_nombre }}</span>
+                    <div v-if="mostrandoInputCodigo === trueque.id" class="codigo-input-container">
+                      <input
+                        v-model="codigoIngresado"
+                        type="text"
+                        class="codigo-input"
+                        placeholder="Ingresa el código de 8 caracteres"
+                        maxlength="8"
+                        @keyup.enter="validarCodigo(trueque)"
+                      />
+                      <button
+                        class="button button--primary button--small"
+                        type="button"
+                        :disabled="procesandoTruequeId === trueque.id"
+                        @click="validarCodigo(trueque)"
+                      >
+                        Validar
+                      </button>
+                      <button
+                        class="button button--secondary button--small"
+                        type="button"
+                        @click="mostrandoInputCodigo = null; codigoIngresado = ''"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    <button
+                      v-else
+                      class="button button--primary button--small"
+                      type="button"
+                      @click="mostrandoInputCodigo = trueque.id"
+                    >
+                      Ingresar código
+                    </button>
+                  </div>
+                </div>
                 <div class="trueque-card__actions">
                   <button
                     v-if="trueque.estado === 'PENDIENTE'"
@@ -222,6 +265,8 @@ const procesandoTruequeId = ref(null)
 const feedbackTrueque = reactive({})
 const feedbackTruequeOk = reactive({})
 const usuarioActualId = ref(null)
+const codigoIngresado = ref('')
+const mostrandoInputCodigo = ref(null)
 
 const publicacionesActivas = computed(() => {
   if (!datosPerfil.value) return []
@@ -374,6 +419,43 @@ const confirmarFinalizacion = async (trueque) => {
     }
   } catch (err) {
     feedbackTrueque[trueque.id] = err.message || 'No se pudo confirmar el trueque.'
+  } finally {
+    procesandoTruequeId.value = null
+  }
+}
+
+const validarCodigo = async (trueque) => {
+  if (!codigoIngresado.value) {
+    feedbackTrueque[trueque.id] = 'Por favor ingresa el código de confirmación.'
+    feedbackTruequeOk[trueque.id] = false
+    return
+  }
+
+  procesandoTruequeId.value = trueque.id
+  feedbackTrueque[trueque.id] = ''
+  feedbackTruequeOk[trueque.id] = false
+
+  try {
+    const resultado = await userController.validarCodigoTrueque(trueque.id, codigoIngresado.value)
+    feedbackTruequeOk[trueque.id] = true
+    feedbackTrueque[trueque.id] = resultado.message || 'Código validado correctamente.'
+    codigoIngresado.value = ''
+    mostrandoInputCodigo.value = null
+    await cargarPerfil()
+    await cargarMisTrueques()
+
+    if (resultado.habilitar_resena) {
+      const truequeActualizado = misTrueques.value.find((item) => item.id === trueque.id)
+      if (truequeActualizado?.pendiente_resena && hu4?.abrirModalResenaPrioritario) {
+        hu4.abrirModalResenaPrioritario(truequeActualizado)
+      }
+    }
+
+    if (hu4?.refrescarDatosHu4) {
+      await hu4.refrescarDatosHu4({ omitirModalesAutomaticos: resultado.habilitar_resena })
+    }
+  } catch (err) {
+    feedbackTrueque[trueque.id] = err.message || 'Código inválido.'
   } finally {
     procesandoTruequeId.value = null
   }
@@ -711,5 +793,67 @@ onUnmounted(() => {
   font-weight: bold;
   color: #333;
   font-size: 1.2rem;
+}
+
+.codigo-confirmacion {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #f0f7ff;
+  border-radius: 8px;
+  border: 1px solid #b8daff;
+}
+
+.codigo-emisor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.codigo-receptor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.codigo-label {
+  font-weight: bold;
+  color: #004085;
+  font-size: 0.9rem;
+}
+
+.codigo-valor {
+  font-family: 'Courier New', monospace;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #004085;
+  letter-spacing: 0.2rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 4px;
+  text-align: center;
+  border: 2px solid #004085;
+}
+
+.codigo-instruccion {
+  color: #6c757d;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.codigo-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.codigo-input {
+  padding: 0.5rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: 'Courier New', monospace;
+  text-align: center;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
 }
 </style>

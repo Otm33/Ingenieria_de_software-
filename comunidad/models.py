@@ -167,7 +167,9 @@ class Publicacion(models.Model):
     
     def puede_pausarse(self):
         """Verifica si la publicación puede pausarse (usuario tiene saldo suficiente)."""
-        return self.usuario.puede_modificar_publicaciones()
+        if self.usuario.puede_modificar_publicaciones():
+            return True, "Puede pausarse"
+        return False, "Saldo crítico inferior a -10 horas. No puedes modificar ofertas."
     
     def puede_reactivarse(self):
         """Verifica si la publicación puede reactivarse."""
@@ -220,6 +222,9 @@ class AcuerdoTrueque(models.Model):
     # Fecha de creación y modificación
     creado_el = models.DateTimeField(auto_now_add=True, null=True)  # null=True para migraciones
     actualizado_el = models.DateTimeField(auto_now=True, null=True)  # null=True para migraciones
+    
+    # Código de confirmación para finalizar trueque (8 caracteres alfanuméricos)
+    codigo_confirmacion = models.CharField(max_length=8, unique=True, null=True, blank=True)
 
     # ===== MÉTODOS DE NEGOCIO =====
     

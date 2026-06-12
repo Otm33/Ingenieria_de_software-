@@ -206,6 +206,14 @@ export default class UserService {
     })
   }
 
+  async validarCodigoTrueque(truequeId, codigo) {
+    return await this._request(`trueques/${truequeId}/validar-codigo/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo }),
+    })
+  }
+
   async registrarResena(truequeId, estrellas, comentario) {
     return await this._request('resenas/', {
       method: 'POST',

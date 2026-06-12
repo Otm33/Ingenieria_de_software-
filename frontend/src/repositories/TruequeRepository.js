@@ -107,6 +107,22 @@ export default class TruequeRepository {
   }
 
   /**
+   * Valida el código de confirmación y finaliza el trueque
+   */
+  async validarCodigo(truequeId, codigo) {
+    const result = await this.apiClient.post(
+      `trueques/${truequeId}/validar-codigo/`,
+      { codigo }
+    )
+    
+    // Invalidar caché de trueques y notificaciones
+    this.apiClient.invalidate(this.cacheKeys.misTrueques)
+    this.apiClient.invalidate(this.cacheKeys.notificaciones)
+    
+    return result
+  }
+
+  /**
    * Obtiene los trueques del usuario actual (con caché)
    */
   async obtenerMisTrueques(forceRefresh = false) {

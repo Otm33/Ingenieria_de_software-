@@ -92,6 +92,10 @@ export default class UserController {
     return await this.service.finalizarTrueque(truequeId)
   }
 
+  async validarCodigoTrueque(truequeId, codigo) {
+    return await this.service.validarCodigoTrueque(truequeId, codigo)
+  }
+
   async registrarResena(truequeId, estrellas, comentario) {
     return await this.service.registrarResena(truequeId, estrellas, comentario)
   }

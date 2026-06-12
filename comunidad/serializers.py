@@ -78,6 +78,7 @@ class AcuerdoTruequeSerializer(serializers.ModelSerializer):
             "impacto_horas",
             "oferta_propia_titulo",
             "oferta_contraparte_titulo",
+            "codigo_confirmacion",
             "creado_el",
             "actualizado_el",
         ]
