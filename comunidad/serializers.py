@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, SaldoComercial, Usuario
+from .models import AcuerdoTrueque, AcuerdoTruequeMultiple, NotificacionPropuesta, Publicacion, Resena, ResenaMultiple, SaldoComercial, Usuario
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -180,6 +180,7 @@ class NotificacionSerializer(serializers.ModelSerializer):
     remitente_username = serializers.CharField(source="remitente.username", read_only=True)
     remitente_id = serializers.IntegerField(source="remitente.id", read_only=True)
     trueque_id = serializers.IntegerField(source="trueque.id", read_only=True)
+    trueque_multiple_id = serializers.IntegerField(source="trueque_multiple.id", read_only=True)
     publicacion_titulo = serializers.CharField(source="publicacion_original.titulo", read_only=True)
     publicacion_tipo = serializers.CharField(source="publicacion_original.tipo", read_only=True)
     acciones = serializers.SerializerMethodField()
@@ -195,6 +196,7 @@ class NotificacionSerializer(serializers.ModelSerializer):
             "remitente_nombre",
             "remitente_username",
             "trueque_id",
+            "trueque_multiple_id",
             "estado",
             "publicacion_titulo",
             "publicacion_tipo",
@@ -249,4 +251,90 @@ class SaldoComercialSerializer(serializers.ModelSerializer):
             "monto_excedente",
             "tipo_movimiento",
             "fecha",
+        ]
+
+
+class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
+    # Campos para los 3 pares
+    emisor1_nombre = serializers.CharField(source='emisor1.nombre_real', read_only=True)
+    receptor1_nombre = serializers.CharField(source='receptor1.nombre_real', read_only=True)
+    emisor2_nombre = serializers.CharField(source='emisor2.nombre_real', read_only=True)
+    receptor2_nombre = serializers.CharField(source='receptor2.nombre_real', read_only=True)
+    emisor3_nombre = serializers.CharField(source='emisor3.nombre_real', read_only=True)
+    receptor3_nombre = serializers.CharField(source='receptor3.nombre_real', read_only=True)
+    
+    # Publicaciones
+    publicacion_emisor1 = PublicacionSerializer(read_only=True)
+    publicacion_receptor1 = PublicacionSerializer(read_only=True)
+    publicacion_emisor2 = PublicacionSerializer(read_only=True)
+    publicacion_receptor2 = PublicacionSerializer(read_only=True)
+    publicacion_emisor3 = PublicacionSerializer(read_only=True)
+    publicacion_receptor3 = PublicacionSerializer(read_only=True)
+    
+    # Métodos
+    puede_aceptar = serializers.SerializerMethodField()
+    todos_aceptaron = serializers.SerializerMethodField()
+    esta_expirado = serializers.SerializerMethodField()
+    todos_pares_confirmaron = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = AcuerdoTruequeMultiple
+        fields = [
+            'id',
+            'emisor1', 'receptor1', 'emisor1_nombre', 'receptor1_nombre',
+            'emisor2', 'receptor2', 'emisor2_nombre', 'receptor2_nombre',
+            'emisor3', 'receptor3', 'emisor3_nombre', 'receptor3_nombre',
+            'publicacion_emisor1', 'publicacion_receptor1',
+            'publicacion_emisor2', 'publicacion_receptor2',
+            'publicacion_emisor3', 'publicacion_receptor3',
+            'estado',
+            'usuario1_aceptado', 'usuario2_aceptado', 'usuario3_aceptado',
+            'par1_confirmado', 'par2_confirmado', 'par3_confirmado',
+            'codigo_par1', 'codigo_par2', 'codigo_par3',
+            'creado_el', 'actualizado_el', 'expira_el',
+            'puede_aceptar', 'todos_aceptaron', 'esta_expirado', 'todos_pares_confirmaron',
+        ]
+    
+    def get_puede_aceptar(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        if not obj.participante(request.user):
+            return False
+        if obj.estado != 'PENDIENTE':
+            return False
+        rol = obj.obtener_usuario_por_rol(request.user)
+        if rol == 1 and not obj.usuario1_aceptado:
+            return True
+        if rol == 2 and not obj.usuario2_aceptado:
+            return True
+        if rol == 3 and not obj.usuario3_aceptado:
+            return True
+        return False
+    
+    def get_todos_aceptaron(self, obj):
+        return obj.todos_aceptaron()
+    
+    def get_esta_expirado(self, obj):
+        return obj.esta_expirado()
+    
+    def get_todos_pares_confirmaron(self, obj):
+        return obj.todos_pares_confirmaron()
+
+
+class ResenaMultipleSerializer(serializers.ModelSerializer):
+    calificador_nombre = serializers.CharField(source='calificador.nombre_real', read_only=True)
+    calificado_nombre = serializers.CharField(source='calificado.nombre_real', read_only=True)
+    
+    class Meta:
+        model = ResenaMultiple
+        fields = [
+            'id',
+            'trueque_multiple',
+            'calificador',
+            'calificador_nombre',
+            'calificado',
+            'calificado_nombre',
+            'estrellas',
+            'comentario',
         ]

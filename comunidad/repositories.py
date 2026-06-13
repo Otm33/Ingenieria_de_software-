@@ -1,6 +1,6 @@
 from django.db.models import Case, IntegerField, Q, Value, When
 
-from .models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, SaldoComercial, Usuario, UsuarioAutorizado
+from .models import AcuerdoTrueque, AcuerdoTruequeMultiple, NotificacionPropuesta, Publicacion, Resena, ResenaMultiple, SaldoComercial, Usuario, UsuarioAutorizado
 
 
 class UsuarioAutorizadoRepository:
@@ -182,12 +182,23 @@ class NotificacionPropuestaRepository:
         self,
         destinatario,
         remitente,
-        trueque,
-        publicacion_original,
-        mensaje,
+        trueque=None,
+        publicacion_original=None,
+        mensaje=None,
         tipo="PROPUESTA",
         match_detalle=None,
     ):
+        # Si se recibe un trueque_multiple en match_detalle, utilizar ese campo
+        trueque_multiple = None
+        if match_detalle and isinstance(match_detalle, dict):
+            trueque_multiple = match_detalle.get('trueque_multiple')
+            # Si llega un id, intentar resolver la instancia
+            try:
+                if isinstance(trueque_multiple, int):
+                    trueque_multiple = AcuerdoTruequeMultiple.objects.get(id=trueque_multiple)
+            except Exception:
+                trueque_multiple = None
+
         return NotificacionPropuesta.objects.create(
             destinatario=destinatario,
             remitente=remitente,
@@ -198,6 +209,7 @@ class NotificacionPropuestaRepository:
             prioridad=True,
             estado="PENDIENTE",
             tipo=tipo,
+            trueque_multiple=trueque_multiple,
         )
 
     def existe_match_entre(self, usuario_a, usuario_b):
@@ -461,3 +473,61 @@ class MatchmakingRepository:
             )
 
         return resultados
+
+
+class AcuerdoTruequeMultipleRepository:
+    def crear(self, datos):
+        return AcuerdoTruequeMultiple.objects.create(**datos)
+    
+    def obtener_bloqueado(self, trueque_id):
+        return AcuerdoTruequeMultiple.objects.select_for_update().get(id=trueque_id)
+    
+    def obtener_por_participante(self, trueque_id, usuario):
+        return AcuerdoTruequeMultiple.objects.get(
+            Q(id=trueque_id) & 
+            (Q(emisor1=usuario) | Q(receptor1=usuario) | 
+             Q(emisor2=usuario) | Q(receptor2=usuario) | 
+             Q(emisor3=usuario) | Q(receptor3=usuario))
+        )
+    
+    def listar_por_usuario(self, usuario):
+        return AcuerdoTruequeMultiple.objects.filter(
+            Q(emisor1=usuario) | Q(receptor1=usuario) | 
+            Q(emisor2=usuario) | Q(receptor2=usuario) | 
+            Q(emisor3=usuario) | Q(receptor3=usuario)
+        ).select_related(
+            'emisor1', 'receptor1', 'emisor2', 'receptor2', 'emisor3', 'receptor3'
+        )
+    
+    def usuario_tiene_trueque_multiple_activo(self, usuario):
+        return AcuerdoTruequeMultiple.objects.filter(
+            Q(emisor1=usuario) | Q(receptor1=usuario) | 
+            Q(emisor2=usuario) | Q(receptor2=usuario) | 
+            Q(emisor3=usuario) | Q(receptor3=usuario),
+            estado__in=['PENDIENTE', 'ACEPTADO', 'EN_CURSO']
+        ).exists()
+    
+    def guardar(self, trueque):
+        trueque.save()
+        return trueque
+
+
+class ResenaMultipleRepository:
+    def crear(self, trueque_multiple, calificador, calificado, estrellas, comentario):
+        return ResenaMultiple.objects.create(
+            trueque_multiple=trueque_multiple,
+            calificador=calificador,
+            calificado=calificado,
+            estrellas=estrellas,
+            comentario=comentario,
+        )
+    
+    def listar_por_calificado(self, calificado):
+        return list(ResenaMultiple.objects.filter(calificado=calificado))
+    
+    def existe_resena(self, trueque_multiple, calificador, calificado):
+        return ResenaMultiple.objects.filter(
+            trueque_multiple=trueque_multiple,
+            calificador=calificador,
+            calificado=calificado
+        ).exists()

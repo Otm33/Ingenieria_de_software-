@@ -170,7 +170,12 @@ const responder = async (notif, accion) => {
   procesandoId.value = notif.id
   errorPorId[notif.id] = ''
   try {
-    await userController.responderPropuesta(notif.trueque_id, accion)
+    if (notif.trueque_multiple_id) {
+      // Trueque múltiple: usar endpoint específico
+      await userController.responderPropuestaMultiple(notif.trueque_multiple_id, accion)
+    } else {
+      await userController.responderPropuesta(notif.trueque_id, accion)
+    }
     await userController.marcarNotificacionLeida(notif.id)
     emit('actualizado')
   } catch (error) {

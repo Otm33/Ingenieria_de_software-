@@ -7,13 +7,15 @@ from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ValidationError
 
 from .models import Publicacion, SaldoComercial, Usuario
-from .repositories import AcuerdoTruequeRepository, PublicacionRepository, ResenaRepository, UsuarioRepository
+from .repositories import AcuerdoTruequeRepository, AcuerdoTruequeMultipleRepository, PublicacionRepository, ResenaRepository, UsuarioRepository
 from .serializers import (
     AcuerdoTruequeSerializer,
+    AcuerdoTruequeMultipleSerializer,
     MatchEnriquecidoSerializer,
     NotificacionSerializer,
     PublicacionSerializer,
     ResenaSerializer,
+    ResenaMultipleSerializer,
     SaldoComercialSerializer,
     UsuarioSerializer,
 )
@@ -27,6 +29,7 @@ from .services import (
     PublicacionService,
     RegistroUsuarioService,
     ResenaService,
+    TruequeMultipleService,
     TruequeService,
 )
 
@@ -656,3 +659,113 @@ class NotificacionesView(APIView):
                 {"error": f"Error al marcar notificación: {str(error)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class AceptarPropuestaMultipleView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or TruequeMultipleService()
+
+    def post(self, request, trueque_multiple_id):
+        try:
+            mensaje = self.servicio.aceptar_propuesta_multiple(request.user, trueque_multiple_id)
+            return Response({"message": mensaje}, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class RechazarPropuestaMultipleView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or TruequeMultipleService()
+
+    def post(self, request, trueque_multiple_id):
+        try:
+            mensaje = self.servicio.rechazar_propuesta_multiple(request.user, trueque_multiple_id)
+            return Response({"message": mensaje}, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class ValidarCodigoParMultipleView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or TruequeMultipleService()
+
+    def post(self, request, trueque_multiple_id):
+        try:
+            codigo = request.data.get("codigo")
+            if not codigo:
+                return Response(
+                    {"error": "Falta el código de validación"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            mensaje = self.servicio.validar_codigo_par(request.user, trueque_multiple_id, codigo)
+            return Response({"message": mensaje}, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class FinalizarParMultipleView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or TruequeMultipleService()
+
+    def post(self, request, trueque_multiple_id):
+        try:
+            mensaje = self.servicio.finalizar_par(request.user, trueque_multiple_id)
+            return Response({"message": mensaje}, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class MisTruequesMultipleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            trueques_multiple = AcuerdoTruequeMultipleRepository().listar_por_usuario(request.user)
+            serializer = AcuerdoTruequeMultipleSerializer(
+                trueques_multiple,
+                many=True,
+                context={"request": request},
+            )
+            return Response({
+                "trueques_multiple": serializer.data,
+                "cantidad": len(serializer.data),
+            }, status=status.HTTP_200_OK)
+        except Exception as error:
+            return Response(
+                {"error": f"Error al obtener trueques múltiples: {str(error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class RegistrarResenaMultipleView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .services import ResenaMultipleService
+        self.servicio = servicio or ResenaMultipleService()
+
+    def post(self, request):
+        try:
+            mensaje = self.servicio.registrar_resena_multiple(request.user, request.data)
+            return Response({"message": mensaje})
+        except BusinessError as error:
+            return manejar_error(error)

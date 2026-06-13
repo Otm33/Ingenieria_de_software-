@@ -394,8 +394,9 @@ class NotificacionPropuesta(models.Model):
     tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='PROPUESTA')
     destinatario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_recibidas')
     remitente = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_enviadas')
-    trueque = models.ForeignKey(AcuerdoTrueque, on_delete=models.CASCADE, related_name='notificaciones')
+    trueque = models.ForeignKey(AcuerdoTrueque, on_delete=models.CASCADE, related_name='notificaciones', null=True, blank=True)
     publicacion_original = models.ForeignKey(Publicacion, on_delete=models.CASCADE, related_name='notificaciones')
+    trueque_multiple = models.ForeignKey('AcuerdoTruequeMultiple', on_delete=models.CASCADE, related_name='notificaciones_multiple', null=True, blank=True)
     mensaje = models.TextField(max_length=300)
     match_detalle = models.JSONField(null=True, blank=True)
     estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
@@ -416,3 +417,145 @@ class SaldoComercial(models.Model):
     monto_excedente = models.DecimalField(max_digits=10, decimal_places=2)
     tipo_movimiento = models.CharField(max_length=10, choices=TIPO_MOVIMIENTO, default='EMISION')
     fecha = models.DateTimeField(auto_now_add=True)
+
+class AcuerdoTruequeMultiple(models.Model):
+    """HU: Trueques múltiples entre 3 usuarios (A→B→C→A)."""
+    ESTADOS = (
+        ('PENDIENTE', 'Pendiente'),
+        ('ACEPTADO', 'Aceptado'),
+        ('RECHAZADO', 'Rechazado'),
+        ('EN_CURSO', 'En Curso'),
+        ('FINALIZADO', 'Finalizado'),
+        ('EXPIRADO', 'Expirado'),
+    )
+    
+    # 3 pares emisor-receptor
+    emisor1 = models.ForeignKey(Usuario, related_name='trueques_multiple_emisor1', on_delete=models.CASCADE)
+    receptor1 = models.ForeignKey(Usuario, related_name='trueques_multiple_receptor1', on_delete=models.CASCADE)
+    emisor2 = models.ForeignKey(Usuario, related_name='trueques_multiple_emisor2', on_delete=models.CASCADE)
+    receptor2 = models.ForeignKey(Usuario, related_name='trueques_multiple_receptor2', on_delete=models.CASCADE)
+    emisor3 = models.ForeignKey(Usuario, related_name='trueques_multiple_emisor3', on_delete=models.CASCADE)
+    receptor3 = models.ForeignKey(Usuario, related_name='trueques_multiple_receptor3', on_delete=models.CASCADE)
+    
+    # Publicaciones involucradas
+    publicacion_emisor1 = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_multiple_emisor1')
+    publicacion_receptor1 = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_multiple_receptor1')
+    publicacion_emisor2 = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_multiple_emisor2')
+    publicacion_receptor2 = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_multiple_receptor2')
+    publicacion_emisor3 = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_multiple_emisor3')
+    publicacion_receptor3 = models.ForeignKey('Publicacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='trueques_multiple_receptor3')
+    
+    # Estado general del ciclo
+    estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
+    
+    # Confirmaciones de aceptación (1 por usuario)
+    usuario1_aceptado = models.BooleanField(default=False)
+    usuario2_aceptado = models.BooleanField(default=False)
+    usuario3_aceptado = models.BooleanField(default=False)
+    
+    # Confirmaciones de finalización por par (para códigos)
+    par1_confirmado = models.BooleanField(default=False)  # emisor1→receptor1
+    par2_confirmado = models.BooleanField(default=False)  # emisor2→receptor2
+    par3_confirmado = models.BooleanField(default=False)  # emisor3→receptor3
+    
+    # Códigos de validación (1 por par)
+    codigo_par1 = models.CharField(max_length=8, unique=True, null=True, blank=True)
+    codigo_par2 = models.CharField(max_length=8, unique=True, null=True, blank=True)
+    codigo_par3 = models.CharField(max_length=8, unique=True, null=True, blank=True)
+    
+    # Fechas
+    creado_el = models.DateTimeField(auto_now_add=True)
+    actualizado_el = models.DateTimeField(auto_now=True)
+    expira_el = models.DateTimeField()  # 48 horas después de crear
+    
+    class Meta:
+        constraints = []
+    
+    # ===== MÉTODOS DE NEGOCIO =====
+    
+    def todos_aceptaron(self):
+        """Verifica si los 3 usuarios han aceptado el trueque múltiple."""
+        return self.usuario1_aceptado and self.usuario2_aceptado and self.usuario3_aceptado
+    
+    def todos_pares_confirmaron(self):
+        """Verifica si los 3 pares han confirmado la finalización."""
+        return self.par1_confirmado and self.par2_confirmado and self.par3_confirmado
+    
+    def obtener_usuario_por_rol(self, usuario):
+        """Retorna el rol del usuario (1, 2, o 3) según su participación en el ciclo."""
+        if usuario in [self.emisor1, self.receptor1]:
+            return 1
+        elif usuario in [self.emisor2, self.receptor2]:
+            return 2
+        elif usuario in [self.emisor3, self.receptor3]:
+            return 3
+        return None
+    
+    def esta_expirado(self):
+        """Verifica si el trueque múltiple ha expirado (más de 48 horas)."""
+        from django.utils import timezone
+        return timezone.now() > self.expira_el
+    
+    def participante(self, usuario):
+        """Verifica si el usuario es parte del trueque múltiple."""
+        return usuario in [
+            self.emisor1, self.receptor1,
+            self.emisor2, self.receptor2,
+            self.emisor3, self.receptor3
+        ]
+    
+    def obtener_pares_del_usuario(self, usuario):
+        """Retorna los pares en los que participa el usuario."""
+        pares = []
+        if usuario == self.emisor1 or usuario == self.receptor1:
+            pares.append(1)
+        if usuario == self.emisor2 or usuario == self.receptor2:
+            pares.append(2)
+        if usuario == self.emisor3 or usuario == self.receptor3:
+            pares.append(3)
+        return pares
+    
+    def esta_finalizado(self):
+        """Verifica si el trueque múltiple está finalizado."""
+        return self.estado == 'FINALIZADO'
+
+class ResenaMultiple(models.Model):
+    """HU: Calificaciones e historial de confianza post-trueque múltiple."""
+    trueque_multiple = models.ForeignKey(AcuerdoTruequeMultiple, on_delete=models.CASCADE, related_name='resenas_multiple')
+    calificador = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='resenas_multiple_emitidas')
+    calificado = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='resenas_multiple_recibidas')
+    estrellas = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comentario = models.TextField(max_length=500)
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['trueque_multiple', 'calificador', 'calificado'],
+                name='una_resena_multiple_por_calificador_por_calificado',
+            ),
+        ]
+    
+    # ===== MÉTODOS DE NEGOCIO =====
+    
+    def calificacion_valida(self):
+        """Verifica que la calificación esté entre 1 y 5 estrellas."""
+        return 1 <= self.estrellas <= 5
+    
+    def comentario_valido(self):
+        """Verifica que el comentario no esté vacío y cumpla la longitud máxima."""
+        if not self.comentario or not self.comentario.strip():
+            return False, "El comentario no puede estar vacío."
+        if len(self.comentario) > 500:
+            return False, "El comentario no puede exceder 500 caracteres."
+        return True, "Comentario válido"
+    
+    def validar_resena(self):
+        """Valida la reseña completa (calificación y comentario)."""
+        if not self.calificacion_valida():
+            return False, "La calificación debe estar entre 1 y 5 estrellas."
+        
+        comentario_valido, mensaje = self.comentario_valido()
+        if not comentario_valido:
+            return False, mensaje
+        
+        return True, "Resena válida"

@@ -1,7 +1,13 @@
 from django.urls import path
 from .views import (
+    AceptarPropuestaMultipleView,
     CargarUsuariosCSVView,
+    FinalizarParMultipleView,
+    MisTruequesMultipleView,
     RegistroUsuarioView,
+    RegistrarResenaMultipleView,
+    RechazarPropuestaMultipleView,
+    ValidarCodigoParMultipleView,
     ValidarEmailRegistroView,
     SesionActualView,
     LoginView,
@@ -64,4 +70,12 @@ urlpatterns = [
     path('comercios/', CatalogoComerciosView.as_view(), name='catalogo_comercios'),
     path('comercio/pagar/', PagarConSaldoView.as_view(), name='pagar_con_saldo'),
     path('mi-saldo-comercial/', VerSaldoComercialView.as_view(), name='ver_saldo_comercial'),
+    
+    # Trueques múltiples
+    path('trueques-multiples/', MisTruequesMultipleView.as_view(), name='mis_trueques_multiples'),
+    path('trueques-multiples/<int:trueque_multiple_id>/aceptar/', AceptarPropuestaMultipleView.as_view(), name='aceptar_propuesta_multiple'),
+    path('trueques-multiples/<int:trueque_multiple_id>/rechazar/', RechazarPropuestaMultipleView.as_view(), name='rechazar_propuesta_multiple'),
+    path('trueques-multiples/<int:trueque_multiple_id>/validar-codigo/', ValidarCodigoParMultipleView.as_view(), name='validar_codigo_par_multiple'),
+    path('trueques-multiples/<int:trueque_multiple_id>/finalizar-par/', FinalizarParMultipleView.as_view(), name='finalizar_par_multiple'),
+    path('resenas-multiples/', RegistrarResenaMultipleView.as_view(), name='registrar_resena_multiple'),
 ]

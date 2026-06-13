@@ -1,10 +1,12 @@
 from django.contrib import admin
-from .models import Usuario, UsuarioAutorizado, Publicacion, AcuerdoTrueque, Resena, SaldoComercial
+from .models import Usuario, UsuarioAutorizado, Publicacion, AcuerdoTrueque, AcuerdoTruequeMultiple, Resena, ResenaMultiple, SaldoComercial
 
 # Registramos los modelos para que aparezcan en el panel de administración
 admin.site.register(Usuario)
 admin.site.register(UsuarioAutorizado)
 admin.site.register(Publicacion)
 admin.site.register(AcuerdoTrueque)
+admin.site.register(AcuerdoTruequeMultiple)
 admin.site.register(Resena)
+admin.site.register(ResenaMultiple)
 admin.site.register(SaldoComercial)

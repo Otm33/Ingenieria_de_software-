@@ -200,6 +200,16 @@ export default class UserService {
     })
   }
 
+  async responderPropuestaMultiple(truequeMultipleId, accion) {
+    const accionLower = String(accion || '').toLowerCase()
+    const endpointAction = accionLower === 'aceptar' || accionLower === 'aceptar' ? 'aceptar' : 'rechazar'
+    return await this._request(`trueques-multiples/${truequeMultipleId}/${endpointAction}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+  }
+
   async finalizarTrueque(truequeId) {
     return await this._request(`trueques/${truequeId}/finalizar/`, {
       method: 'POST',

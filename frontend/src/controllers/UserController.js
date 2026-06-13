@@ -88,6 +88,10 @@ export default class UserController {
     return await this.service.responderPropuesta(truequeId, accion)
   }
 
+  async responderPropuestaMultiple(truequeMultipleId, accion) {
+    return await this.service.responderPropuestaMultiple(truequeMultipleId, accion)
+  }
+
   async finalizarTrueque(truequeId) {
     return await this.service.finalizarTrueque(truequeId)
   }

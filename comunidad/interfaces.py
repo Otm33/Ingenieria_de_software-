@@ -69,3 +69,25 @@ class MatchmakingInterface(ABC):
     @abstractmethod
     def detectar_y_notificar_matches(self, usuario):
         pass
+
+
+class TruequeMultipleInterface(ABC):
+    @abstractmethod
+    def crear_propuesta_multiple(self, ciclo, usuario_origen=None):
+        pass
+    
+    @abstractmethod
+    def aceptar_propuesta_multiple(self, usuario, trueque_id):
+        pass
+    
+    @abstractmethod
+    def rechazar_propuesta_multiple(self, usuario, trueque_id):
+        pass
+    
+    @abstractmethod
+    def validar_codigo_par(self, usuario, trueque_id, codigo):
+        pass
+    
+    @abstractmethod
+    def finalizar_par(self, usuario, trueque_id):
+        pass
