@@ -1,6 +1,6 @@
 from .base import BusinessError
 from ..interfaces import RegistroUsuariosInterface
-from ..repositories import UsuarioAutorizadoRepository, UsuarioRepository
+from ..repositories_legado import UsuarioAutorizadoRepository, UsuarioRepository
 
 
 class RegistroUsuarioService(RegistroUsuariosInterface):

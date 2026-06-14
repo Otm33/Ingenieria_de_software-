@@ -4,7 +4,7 @@ from rest_framework import status
 from comunidad.controladores.hu_registro_controller import RegistroUsuarioController
 from comunidad.dto.request_models import RegistroUsuarioRequest
 from comunidad.repositorios_implementacion import UsuarioRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 
 class RegistroRouter(APIView):

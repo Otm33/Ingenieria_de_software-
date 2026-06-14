@@ -6,8 +6,8 @@ from rest_framework.views import APIView
 from comunidad.controladores.hu_finalizar_trueque_controller import FinalizarTruequeController
 from comunidad.dto.request_models import ValidarCodigoRequest
 from comunidad.services import TruequeService
-from comunidad.repositories import AcuerdoTruequeRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.repositories_legado import AcuerdoTruequeRepository
+from comunidad.utils import CsrfExemptSessionAuthentication
 from comunidad.services.base import BusinessError
 
 

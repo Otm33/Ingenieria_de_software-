@@ -13,17 +13,19 @@ class SaldoComercialController:
 
     def emitir_vuelto(self, comercio_orm, request: EmitirVueltoRequest) -> dict:
         """Valida que sea un comercio activo y que tenga saldo suficiente."""
-        if not request.email_cliente:
-            raise ValueError("El correo del cliente es obligatorio.")
-        if not request.monto or request.monto <= 0:
-            raise ValueError("El monto debe ser mayor a cero.")
+        if not request.cliente_id:
+            raise ValueError("El ID del cliente es obligatorio.")
+        if not request.monto_excedente or request.monto_excedente <= 0:
+            raise ValueError("El monto excedente debe ser mayor a cero.")
 
         data = {
-            "email_cliente": request.email_cliente,
-            "monto": request.monto,
+            "cliente_id": request.cliente_id,
+            "monto_excedente": request.monto_excedente,
+            "valor_producto": request.valor_producto,
+            "monto_recibido": request.monto_recibido,
         }
-        mensaje = self._comercio_service.emitir_vuelto(comercio_orm, data)
-        return {"mensaje": mensaje}
+        resultado = self._comercio_service.emitir_vuelto(comercio_orm, data)
+        return resultado
 
     def pagar_con_saldo(self, cliente_orm, request: PagarConSaldoRequest) -> dict:
         """Valida que el cliente tenga saldo suficiente y paga al comercio."""
@@ -36,8 +38,8 @@ class SaldoComercialController:
             "comercio_id": request.comercio_id,
             "monto": request.monto,
         }
-        mensaje = self._comercio_service.pagar_con_saldo(cliente_orm, data)
-        return {"mensaje": mensaje}
+        resultado = self._comercio_service.pagar_con_saldo(cliente_orm, data)
+        return resultado
 
     def ver_saldo(self, usuario_orm) -> dict:
         """Retorna el saldo actual y el historial de movimientos del usuario."""
@@ -66,3 +68,7 @@ class SaldoComercialController:
     def listar_comercios(self) -> list:
         """Retorna todos los comercios activos."""
         return self._comercio_service.listar_comercios()
+
+    def listar_clientes(self) -> list:
+        """Retorna todos los clientes activos (usuarios que no son comercios)."""
+        return self._comercio_service.listar_clientes()

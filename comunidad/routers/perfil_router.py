@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from comunidad.controladores.hu_perfil_controller import PerfilController
 from comunidad.repositorios_implementacion import PublicacionRepository, ResenaRepository, UsuarioRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 
 class MiPerfilRouter(APIView):

@@ -53,6 +53,7 @@ class APIHU4Tests(HU4APITestCase):
 
         response = self.client.get("/api/matchmaking/")
 
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(response.data["cantidad"], 1)
         match = response.data["matches"][0]
@@ -117,11 +118,12 @@ class APIHU4Tests(HU4APITestCase):
             format="json",
         )
 
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.client.force_authenticate(user=datos["user_a"])
         mis_trueques = self.client.get("/api/mis-trueques/")
         trueque = mis_trueques.data["trueques"][0]
-        self.assertEqual(trueque["estado"], "ACEPTADO")
+        self.assertEqual(trueque["estado"], "EN_CURSO")
 
     def test_api_finalizar_primera_confirmacion_200_sin_transferencia(self):
         datos = self._crear_par_complementario()
@@ -147,11 +149,12 @@ class APIHU4Tests(HU4APITestCase):
         self.client.force_authenticate(user=datos["user_a"])
         response = self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
 
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertFalse(response.data["saldo_transferido"])
         self.assertTrue(response.data["emisor_confirmado"])
         self.assertFalse(response.data["receptor_confirmado"])
-        self.assertEqual(response.data["estado"], "ACEPTADO")
+        self.assertEqual(response.data["estado"], "EN_CURSO")
 
         datos["user_a"].refresh_from_db()
         datos["user_b"].refresh_from_db()
@@ -185,6 +188,7 @@ class APIHU4Tests(HU4APITestCase):
         self.client.force_authenticate(user=datos["user_b"])
         response = self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
 
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data["saldo_transferido"])
         self.assertTrue(response.data["habilitar_resena"])
@@ -210,6 +214,7 @@ class APIHU4Tests(HU4APITestCase):
 
         response = self.client.get("/api/mis-trueques/")
 
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["cantidad"], 1)
         trueque = response.data["trueques"][0]
@@ -320,6 +325,7 @@ class APIHU4Tests(HU4APITestCase):
         self.client.force_authenticate(user=datos["user_a"])
         response = self.client.get("/api/notificaciones/")
 
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         match_notif = next(
             notif for notif in response.data["notificaciones"] if notif["tipo"] == "MATCH"

@@ -1,7 +1,7 @@
 from django.core.exceptions import ObjectDoesNotExist
 
 from .base import BusinessError
-from ..repositories import NotificacionPropuestaRepository
+from ..repositories_legado import NotificacionPropuestaRepository
 
 
 class NotificacionService:

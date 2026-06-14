@@ -7,7 +7,7 @@ from comunidad.controladores.hu_gestion_publicacion_controller import GestionPub
 from comunidad.dto.request_models import ActualizarPublicacionRequest
 from comunidad.services import PublicacionService
 from comunidad.repositorios_implementacion import PublicacionRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 from comunidad.services.base import BusinessError
 
 

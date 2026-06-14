@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 
 from comunidad.controladores.hu_autenticacion_controller import AutenticacionController
 from comunidad.dto.request_models import LoginRequest
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 
 class SesionRouter(APIView):

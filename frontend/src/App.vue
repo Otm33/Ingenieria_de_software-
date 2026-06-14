@@ -12,6 +12,9 @@
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'comunidad'" title="Comunidad">
             <span>Comunidad</span>
           </button>
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'red-comercial'" title="Red Comercial">
+            <span>Red Comercial</span>
+          </button>
         </nav>
 
         <nav v-if="usuarioActual?.esStaff || usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
@@ -100,6 +103,7 @@
         <Cartelera v-else-if="seccionActiva === 'publicar'" :modo-publicar="true" @volver-cartelera="seccionActiva = 'cartelera'" />
         <Perfil v-else-if="seccionActiva === 'perfil'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
+        <RedComercial v-else-if="seccionActiva === 'red-comercial'" :usuario-actual="usuarioActual" />
         <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
         <AdminCSV v-else-if="(usuarioActual.esStaff || usuarioActual.esSuperusuario) && seccionActiva === 'csv'" />
         <Cartelera v-else />
@@ -144,6 +148,7 @@ import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
 import Perfil from './views/Perfil.vue'
 import Comunidad from './views/Comunidad.vue'
+import RedComercial from './views/RedComercial.vue'
 import ModalNotificaciones from './components/ModalNotificaciones.vue'
 import ModalPropuesta from './components/ModalPropuesta.vue'
 import ModalResena from './components/ModalResena.vue'

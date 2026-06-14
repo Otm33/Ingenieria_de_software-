@@ -2,11 +2,12 @@ from django.urls import path
 
 # HU Autenticación
 from .routers.autenticacion_router import SesionRouter, LoginRouter, LogoutRouter
-from .views import SetupAdminView  # Vista temporal para configurar admin
 
 # HU Registro
 from .routers.registro_router import RegistroRouter
-from .views import ValidarEmailRegistroView, CargarUsuariosCSVView # Mantenemos estas views legacy por ahora si no se migró CargarCSV
+
+# Administración y soporte
+from .routers.admin_router import SetupAdminRouter, CargarUsuariosCSVRouter, ValidarEmailRegistroRouter
 
 # HU Publicaciones
 from .routers.publicacion_router import CrearPublicacionRouter
@@ -28,7 +29,7 @@ from .routers.finalizar_trueque_router import FinalizarTruequeRouter, ValidarCod
 from .routers.resena_router import CrearResenaRouter, CrearResenaMultipleRouter
 
 # HU Saldo Comercial
-from .routers.saldo_comercial_router import EmitirVueltoRouter, PagarConSaldoRouter, MiSaldoComercialRouter, ComerciosRouter
+from .routers.saldo_comercial_router import EmitirVueltoRouter, PagarConSaldoRouter, MiSaldoComercialRouter, ComerciosRouter, ClientesRouter
 
 # HU Notificaciones
 from .routers.notificacion_router import NotificacionRouter, MarcarLeidaRouter
@@ -44,51 +45,52 @@ from .routers.trueque_multiple_router import (
 
 
 urlpatterns = [
-    # Temporal: Setup admin
-    path('setup-admin/<str:username>/', SetupAdminView.as_view(), name='setup_admin_temp'),
-    
+    # Administración temporal
+    path('setup-admin/<str:username>/', SetupAdminRouter.as_view(), name='setup_admin_temp'),
+
     # Autenticación
     path('sesion/', SesionRouter.as_view(), name='sesion_actual'),
     path('login/', LoginRouter.as_view(), name='login'),
     path('logout/', LogoutRouter.as_view(), name='logout'),
-    
+
     # Registro
     path('registro/', RegistroRouter.as_view(), name='registro'),
-    path('registro/validar-email/', ValidarEmailRegistroView.as_view(), name='validar_email_registro'), # Legacy
-    path('cargar-csv/', CargarUsuariosCSVView.as_view(), name='cargar_csv'), # Legacy
-    
+    path('registro/validar-email/', ValidarEmailRegistroRouter.as_view(), name='validar_email_registro'),
+    path('cargar-csv/', CargarUsuariosCSVRouter.as_view(), name='cargar_csv'),
+
     # Perfil / Comunidad
     path('comunidad/', ComunidadRouter.as_view(), name='directorio_comunidad'),
     path('perfil/<int:user_id>/', PerfilOtroUsuarioRouter.as_view(), name='ver_perfil_usuario'),
     path('mi-perfil/', MiPerfilRouter.as_view(), name='ver_mi_perfil'),
-    
+
     # Publicaciones
     path('cartelera/', CarteleraRouter.as_view(), name='cartelera'),
     path('publicaciones/', CrearPublicacionRouter.as_view(), name='crear_publicacion'),
     path('publicaciones/<int:pk>/', GestionPublicacionRouter.as_view(), name='actualizar_publicacion'),
     path('mis-publicaciones/', MisPublicacionesRouter.as_view(), name='mis_publicaciones'),
-    
+
     # HU4: Match y Propuestas
     path('matchmaking/', MatchmakingRouter.as_view(), name='matchmaking'),
     path('trueques/propuestas/crear/', CrearPropuestaRouter.as_view(), name='crear_propuesta'),
     path('trueques/<int:trueque_id>/responder/', ResponderPropuestaRouter.as_view(), name='responder_propuesta'),
-    
+
     # HU4: Finalizar y Reseñas
     path('trueques/<int:trueque_id>/finalizar/', FinalizarTruequeRouter.as_view(), name='finalizar_trueque'),
     path('trueques/<int:trueque_id>/validar-codigo/', ValidarCodigoRouter.as_view(), name='validar_codigo'),
     path('mis-trueques/', MisTruequesRouter.as_view(), name='mis_trueques'),
     path('resenas/', CrearResenaRouter.as_view(), name='registrar_resena'),
-    
+
     # Notificaciones
     path('notificaciones/', NotificacionRouter.as_view(), name='notificaciones'),
     path('notificaciones/marcar-leida/', MarcarLeidaRouter.as_view(), name='marcar_leida'),
-    
+
     # Saldos comerciales
     path('comercio/emitir-vuelto/', EmitirVueltoRouter.as_view(), name='emitir_vuelto'),
     path('comercios/', ComerciosRouter.as_view(), name='catalogo_comercios'),
+    path('clientes/', ClientesRouter.as_view(), name='catalogo_clientes'),
     path('comercio/pagar/', PagarConSaldoRouter.as_view(), name='pagar_con_saldo'),
     path('mi-saldo-comercial/', MiSaldoComercialRouter.as_view(), name='ver_saldo_comercial'),
-    
+
     # Trueques múltiples
     path('mis-trueques-multiples/', MisTruequesMultiplesRouter.as_view(), name='mis_trueques_multiples'),
     path('trueques-multiples/<int:trueque_multiple_id>/aceptar/', AceptarTruequeMultipleRouter.as_view(), name='aceptar_propuesta_multiple'),

@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.test import TestCase, override_settings
 
 from comunidad.models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, Usuario
-from comunidad.repositories import MatchmakingRepository
+from comunidad.repositories_legado import MatchmakingRepository
 from comunidad.serializers import NotificacionSerializer
 from comunidad.services import BusinessError, MatchmakingService, ResenaService, TruequeService
 from comunidad.tests.helpers import (
@@ -170,7 +170,7 @@ class ServiciosHU4Tests(HU4TestCase):
         ).first()
         self.assertIsNotNone(notif)
 
-        from comunidad.repositories import NotificacionPropuestaRepository
+        from comunidad.repositories_legado import NotificacionPropuestaRepository
 
         NotificacionPropuestaRepository().marcar_como_leida(notif.id, destinatario=user_a)
 
@@ -442,7 +442,7 @@ class ServiciosHU4Tests(HU4TestCase):
 
         self.trueque_service.responder_propuesta(receptor, trueque.id, "ACEPTAR")
         trueque.refresh_from_db()
-        self.assertEqual(trueque.estado, "ACEPTADO")
+        self.assertEqual(trueque.estado, "EN_CURSO")
 
     def test_finalizar_una_confirmacion_no_mueve_saldo(self):
         prestador = crear_usuario("prestador", "prest@test.com", "Prestador", horas=0.0)

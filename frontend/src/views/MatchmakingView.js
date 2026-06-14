@@ -7,8 +7,8 @@ export class MatchmakingView extends GeneralView {
 
     async obtenerMatches(publicacionId = null) {
         try {
-            const url = publicacionId 
-                ? `/api/matchmaking/?publicacion_id=${publicacionId}` 
+            const url = publicacionId
+                ? `/api/matchmaking/?publicacion_id=${publicacionId}`
                 : '/api/matchmaking/';
             const response = await this.apiClient.get(url);
             return response.data;

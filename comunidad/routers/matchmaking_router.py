@@ -8,7 +8,7 @@ from comunidad.dto.request_models import MatchmakingRequest
 from comunidad.serializers import MatchEnriquecidoSerializer
 from comunidad.services import MatchmakingService
 from comunidad.repositorios_implementacion import PublicacionRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 
 class MatchmakingRouter(APIView):

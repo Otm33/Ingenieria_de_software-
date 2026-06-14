@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from comunidad.controladores.hu_resena_controller import ResenaController
 from comunidad.dto.request_models import ResenaRequest, ResenaMultipleRequest
 from comunidad.services import ResenaService, ResenaMultipleService
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 from comunidad.services.base import BusinessError
 
 

@@ -2,7 +2,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
 from .base import BusinessError
-from ..repositories import AcuerdoTruequeMultipleRepository, ResenaMultipleRepository
+from ..repositories_legado import AcuerdoTruequeMultipleRepository, ResenaMultipleRepository
 
 
 class ResenaMultipleService:

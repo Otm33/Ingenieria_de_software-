@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import logging
 from .base import BusinessError, generar_codigo_confirmacion
-from ..repositories import AcuerdoTruequeMultipleRepository, UsuarioRepository, PublicacionRepository
+from ..repositories_legado import AcuerdoTruequeMultipleRepository, UsuarioRepository, PublicacionRepository
 from .notificacion import NotificacionService
 
 

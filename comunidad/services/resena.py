@@ -3,7 +3,7 @@ from django.db import transaction
 
 from .base import BusinessError
 from ..interfaces import ResenaInterface
-from ..repositories import AcuerdoTruequeRepository, ResenaRepository, UsuarioRepository
+from ..repositories_legado import AcuerdoTruequeRepository, ResenaRepository, UsuarioRepository
 
 
 class ResenaService(ResenaInterface):

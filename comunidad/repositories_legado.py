@@ -1,4 +1,4 @@
-from django.db.models import Case, IntegerField, Q, Value, When
+﻿from django.db.models import Case, IntegerField, Q, Value, When
 
 from .models import AcuerdoTrueque, AcuerdoTruequeMultiple, NotificacionPropuesta, Publicacion, Resena, ResenaMultiple, SaldoComercial, Usuario, UsuarioAutorizado
 
@@ -172,12 +172,21 @@ class ResenaRepository:
 
 
 class SaldoComercialRepository:
-    def crear_movimiento(self, comercio, cliente, monto, tipo_movimiento):
+    def crear_movimiento(self, comercio, cliente, monto, tipo_movimiento, valor_producto=None, monto_recibido=None):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        VIGENCIA_SALDO_COMERCIAL_ANIOS = 12
+        fecha_expiracion = timezone.now() + timedelta(days=365 * VIGENCIA_SALDO_COMERCIAL_ANIOS)
+        
         return SaldoComercial.objects.create(
             comercio=comercio,
             cliente=cliente,
             monto_excedente=monto,
             tipo_movimiento=tipo_movimiento,
+            fecha_expiracion=fecha_expiracion,
+            valor_producto=valor_producto,
+            monto_recibido=monto_recibido,
         )
 
 
@@ -217,7 +226,7 @@ class NotificacionPropuestaRepository:
         )
 
     def existe_match_entre(self, usuario_a, usuario_b):
-        """Evita duplicar MATCH si ya hay notificación (incl. LEIDA) con trueque PENDIENTE."""
+        """Evita duplicar MATCH si ya hay notificaci├│n (incl. LEIDA) con trueque PENDIENTE."""
         return NotificacionPropuesta.objects.filter(
             tipo="MATCH",
             trueque__estado="PENDIENTE",
@@ -268,7 +277,7 @@ class NotificacionPropuestaRepository:
         ).exclude(estado="LEIDA").update(estado="LEIDA", leida_el=ahora)
     
     def marcar_leidas_por_trueque_ambos_usuarios(self, trueque_id, tipos=None):
-        """Marca todas las notificaciones de un trueque como leídas para ambos usuarios."""
+        """Marca todas las notificaciones de un trueque como le├¡das para ambos usuarios."""
         from .models import NotificacionPropuesta
         from django.utils import timezone
 
@@ -364,8 +373,8 @@ class MatchmakingRepository:
     
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_seleccionada):
         """
-        Verifica si el usuario tiene publicaciones con el mismo título que la publicación seleccionada.
-        Retorna un diccionario con información sobre las coincidencias.
+        Verifica si el usuario tiene publicaciones con el mismo t├¡tulo que la publicaci├│n seleccionada.
+        Retorna un diccionario con informaci├│n sobre las coincidencias.
         """
         if not publicacion_seleccionada or not publicacion_seleccionada.titulo:
             return {
@@ -375,10 +384,10 @@ class MatchmakingRepository:
                 "titulo": None
             }
         
-        # Determinar qué tipo de publicación buscamos (el complementario)
+        # Determinar qu├® tipo de publicaci├│n buscamos (el complementario)
         tipo_buscado = "NECESIDAD" if publicacion_seleccionada.tipo == "TALENTO" else "TALENTO"
         
-        # Buscar publicaciones del usuario con el mismo título y tipo complementario
+        # Buscar publicaciones del usuario con el mismo t├¡tulo y tipo complementario
         publicaciones_coincidentes = list(
             Publicacion.objects.filter(
                 usuario=usuario,
@@ -397,8 +406,8 @@ class MatchmakingRepository:
     
     def buscar_matches_por_publicacion(self, usuario, publicacion):
         """
-        Busca matches complementarios por título de la publicación seleccionada.
-        Si es TALENTO, busca usuarios con NECESIDAD del mismo título (y viceversa).
+        Busca matches complementarios por t├¡tulo de la publicaci├│n seleccionada.
+        Si es TALENTO, busca usuarios con NECESIDAD del mismo t├¡tulo (y viceversa).
         """
         if not publicacion or not publicacion.titulo:
             return []

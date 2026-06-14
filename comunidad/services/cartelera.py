@@ -1,5 +1,5 @@
 from ..interfaces import CarteleraInterface
-from ..repositories import PublicacionRepository
+from ..repositories_legado import PublicacionRepository
 
 
 class CarteleraService(CarteleraInterface):

@@ -1,5 +1,5 @@
 from ..interfaces import MatchmakingInterface
-from ..repositories import PublicacionRepository, MatchmakingRepository, NotificacionPropuestaRepository, AcuerdoTruequeRepository
+from ..repositories_legado import PublicacionRepository, MatchmakingRepository, NotificacionPropuestaRepository, AcuerdoTruequeRepository
 from .trueque import TruequeService
 
 

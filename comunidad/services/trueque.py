@@ -3,7 +3,7 @@ from django.db import transaction
 
 from .base import BusinessError, generar_codigo_confirmacion
 from ..interfaces import TruequeInterface
-from ..repositories import AcuerdoTruequeRepository, UsuarioRepository, PublicacionRepository
+from ..repositories_legado import AcuerdoTruequeRepository, UsuarioRepository, PublicacionRepository
 from .notificacion import NotificacionService
 
 

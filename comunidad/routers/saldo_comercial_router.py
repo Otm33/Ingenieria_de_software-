@@ -7,7 +7,7 @@ from comunidad.controladores.hu_saldo_comercial_controller import SaldoComercial
 from comunidad.dto.request_models import EmitirVueltoRequest, PagarConSaldoRequest
 from comunidad.services import ComercioService
 from comunidad.repositorios_implementacion import UsuarioRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 from comunidad.services.base import BusinessError
 
 
@@ -19,8 +19,10 @@ class EmitirVueltoRouter(APIView):
     def post(self, request):
         try:
             req_data = EmitirVueltoRequest(
-                email_cliente=request.data.get("email_cliente"),
-                monto=float(request.data.get("monto", 0)),
+                cliente_id=request.data.get("cliente_id"),
+                valor_producto=request.data.get("valor_producto"),
+                monto_recibido=request.data.get("monto_recibido"),
+                monto_excedente=request.data.get("monto_excedente"),
             )
 
             controlador = SaldoComercialController(
@@ -95,5 +97,22 @@ class ComerciosRouter(APIView):
             )
             resultado = controlador.listar_comercios()
             return Response({"comercios": resultado}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ClientesRouter(APIView):
+    """Router para GET /clientes/"""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def get(self, request):
+        try:
+            controlador = SaldoComercialController(
+                comercio_service=ComercioService(),
+                usuario_repository=UsuarioRepository(),
+            )
+            resultado = controlador.listar_clientes()
+            return Response({"clientes": resultado}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

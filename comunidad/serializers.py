@@ -249,8 +249,11 @@ class SaldoComercialSerializer(serializers.ModelSerializer):
             "cliente_nombre",
             "cliente_email",
             "monto_excedente",
+            "valor_producto",
+            "monto_recibido",
             "tipo_movimiento",
             "fecha",
+            "fecha_expiracion",
         ]
 
 

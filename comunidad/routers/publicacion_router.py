@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from comunidad.controladores.hu_crear_publicacion_controller import CrearPublicacionController
 from comunidad.dto.request_models import CrearPublicacionRequest
 from comunidad.repositorios_implementacion import PublicacionRepository, UsuarioRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 class CrearPublicacionRouter(APIView):
     """

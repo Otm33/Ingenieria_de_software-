@@ -39,7 +39,7 @@ class TruequeMultipleController:
 
     def listar_mis_trueques_multiples(self, usuario_orm, request=None) -> dict:
         """Retorna todos los trueques múltiples donde participa el usuario."""
-        from comunidad.repositories import AcuerdoTruequeMultipleRepository
+        from comunidad.repositories_legado import AcuerdoTruequeMultipleRepository
         from comunidad.serializers import AcuerdoTruequeMultipleSerializer
         import logging
 

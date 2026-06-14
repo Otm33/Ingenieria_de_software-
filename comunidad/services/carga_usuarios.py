@@ -2,7 +2,7 @@ import csv
 
 from .base import BusinessError
 from ..interfaces import CargaUsuariosInterface
-from ..repositories import UsuarioAutorizadoRepository
+from ..repositories_legado import UsuarioAutorizadoRepository
 
 
 class CargaUsuariosService(CargaUsuariosInterface):

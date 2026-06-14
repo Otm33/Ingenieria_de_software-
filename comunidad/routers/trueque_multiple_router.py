@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from comunidad.controladores.hu_trueque_multiple_controller import TruequeMultipleController
 from comunidad.services import TruequeMultipleService
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 from comunidad.services.base import BusinessError
 
 

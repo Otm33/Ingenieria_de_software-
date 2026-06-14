@@ -174,17 +174,19 @@ export class ResenaMultipleRequest {
 
 // ── HU Saldo Comercial ───────────────────────────────────────
 export class EmitirVueltoRequest {
-    constructor({ email_cliente, monto }) {
-        this.email_cliente = email_cliente;
-        this.monto = monto;
+    constructor({ cliente_id, valor_producto = null, monto_recibido = null, monto_excedente = null }) {
+        this.cliente_id = cliente_id;
+        this.valor_producto = valor_producto;
+        this.monto_recibido = monto_recibido;
+        this.monto_excedente = monto_excedente;
     }
 
     validar() {
-        if (!this.email_cliente || !this.email_cliente.includes("@")) {
-            throw new Error("El correo del cliente no es válido.");
+        if (!this.cliente_id) {
+            throw new Error("El ID del cliente es obligatorio.");
         }
-        if (!this.monto || this.monto <= 0) {
-            throw new Error("El monto debe ser mayor a cero.");
+        if (!this.monto_excedente || this.monto_excedente <= 0) {
+            throw new Error("El monto excedente debe ser mayor a cero.");
         }
         return true;
     }

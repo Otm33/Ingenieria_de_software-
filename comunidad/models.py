@@ -65,6 +65,24 @@ class Usuario(AbstractUser):
     def puede_modificar_publicaciones(self) -> bool:
         return not self.tiene_saldo_critico()
 
+    def es_comercio_activo(self) -> bool:
+        """Verifica si es un comercio afiliado activo."""
+        return self.es_comercio and self.is_active
+
+    def puede_emitir_vuelto_comercial(self, monto) -> tuple[bool, str]:
+        """Verifica si el comercio puede emitir vuelto comercial (deuda permitida)."""
+        if not self.es_comercio_activo():
+            return False, "Solo los comercios activos pueden emitir vuelto."
+        return True, "Puede emitir vuelto"
+
+    def puede_pagar_con_saldo(self, monto) -> tuple[bool, str]:
+        """Verifica si el cliente puede pagar con saldo comercial."""
+        if self.es_comercio:
+            return False, "Los comercios no pueden pagar con saldo comercial."
+        if self.saldo_comercial < monto:
+            return False, "Saldo comercial insuficiente."
+        return True, "Puede pagar con saldo"
+
 
 class Publicacion(models.Model):
     """Catálogo de ofertas (Talentos) y demandas (Necesidades)."""
@@ -265,8 +283,11 @@ class SaldoComercial(models.Model):
     comercio = models.ForeignKey(Usuario, related_name='operaciones_comerciales', on_delete=models.CASCADE)
     cliente = models.ForeignKey(Usuario, related_name='movimientos_saldo', on_delete=models.CASCADE)
     monto_excedente = models.DecimalField(max_digits=10, decimal_places=2)
+    valor_producto = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    monto_recibido = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     tipo_movimiento = models.CharField(max_length=10, choices=TIPO_MOVIMIENTO, default='EMISION')
     fecha = models.DateTimeField(auto_now_add=True)
+    fecha_expiracion = models.DateTimeField(null=True, blank=True)
 
 
 class AcuerdoTruequeMultiple(models.Model):

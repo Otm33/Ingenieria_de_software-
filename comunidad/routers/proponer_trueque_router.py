@@ -7,8 +7,8 @@ from comunidad.controladores.hu_proponer_trueque_controller import ProponerTrueq
 from comunidad.dto.request_models import PropuestaRequest, ResponderPropuestaRequest
 from comunidad.services import TruequeService
 from comunidad.services.base import BusinessError
-from comunidad.repositories import AcuerdoTruequeRepository
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.repositories_legado import AcuerdoTruequeRepository
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 
 class CrearPropuestaRouter(APIView):

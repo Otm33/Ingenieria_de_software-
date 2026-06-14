@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from comunidad.controladores.hu_notificacion_controller import NotificacionController
 from comunidad.services import NotificacionService
-from comunidad.views import CsrfExemptSessionAuthentication
+from comunidad.utils import CsrfExemptSessionAuthentication
 
 
 class NotificacionRouter(APIView):

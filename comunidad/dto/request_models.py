@@ -85,8 +85,10 @@ class ResenaMultipleRequest:
 @dataclass
 class EmitirVueltoRequest:
     """DTO para que un comercio emita vuelto en saldo comercial a un cliente."""
-    email_cliente: str
-    monto: float
+    cliente_id: int
+    valor_producto: float | None = None
+    monto_recibido: float | None = None
+    monto_excedente: float | None = None
 
 
 @dataclass
