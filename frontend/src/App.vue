@@ -3,14 +3,35 @@
     <header class="topbar">
       <div class="topbar__inner">
         <nav class="nav nav--main" aria-label="Navegacion principal">
-          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'cartelera'" title="Cartelera">
+          <button
+            v-if="!usuarioActual?.esComercio"
+            class="nav__link nav__link--icon"
+            type="button"
+            @click="seccionActiva = 'cartelera'"
+            title="Cartelera"
+          >
             <span>Cartelera</span>
           </button>
-          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'publicar'" title="Publicar">
+          <button
+            v-if="!usuarioActual?.esComercio"
+            class="nav__link nav__link--icon"
+            type="button"
+            @click="seccionActiva = 'publicar'"
+            title="Publicar"
+          >
             <span>Publicar</span>
           </button>
-          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'comunidad'" title="Comunidad">
+          <button
+            v-if="!usuarioActual?.esComercio"
+            class="nav__link nav__link--icon"
+            type="button"
+            @click="seccionActiva = 'comunidad'"
+            title="Comunidad"
+          >
             <span>Comunidad</span>
+          </button>
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'red-comercial'" title="Red Comercial">
+            <span>Red Comercial</span>
           </button>
         </nav>
 
@@ -21,6 +42,7 @@
 
         <div v-if="usuarioActual" class="session-box">
           <button
+            v-if="!usuarioActual.esComercio"
             class="nav__link nav__link--icon nav__link--notificaciones"
             type="button"
             title="Notificaciones"
@@ -70,10 +92,20 @@
             <p v-if="loginError" class="alert alert--error">{{ loginError }}</p>
 
             <div class="auth-links">
-              <button class="link-button" type="button" @click="mostrarRegistroUsuario">
+              <button
+                class="link-button"
+                :class="{ 'link-button--active': tipoRegistroActivo === 'usuario' }"
+                type="button"
+                @click="mostrarRegistroUsuario"
+              >
                 No tengo cuenta
               </button>
-              <button class="link-button" type="button" @click="mostrarRegistroComercio">
+              <button
+                class="link-button"
+                :class="{ 'link-button--active': tipoRegistroActivo === 'comercio' }"
+                type="button"
+                @click="mostrarRegistroComercio"
+              >
                 ¿Usted es un comercio?
               </button>
             </div>
@@ -98,8 +130,9 @@
 
         <Cartelera v-if="seccionActiva === 'cartelera'" />
         <Cartelera v-else-if="seccionActiva === 'publicar'" :modo-publicar="true" @volver-cartelera="seccionActiva = 'cartelera'" />
-        <Perfil v-else-if="seccionActiva === 'perfil'" />
+        <Perfil v-else-if="seccionActiva === 'perfil'" @ir-red-comercial="seccionActiva = 'red-comercial'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
+        <RedComercial v-else-if="seccionActiva === 'red-comercial'" />
         <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
         <AdminCSV v-else-if="usuarioActual.esStaff && seccionActiva === 'csv'" />
         <Cartelera v-else />
@@ -144,11 +177,14 @@ import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
 import Perfil from './views/Perfil.vue'
 import Comunidad from './views/Comunidad.vue'
+import RedComercial from './views/RedComercial.vue'
 import ModalNotificaciones from './components/ModalNotificaciones.vue'
 import ModalPropuesta from './components/ModalPropuesta.vue'
 import ModalResena from './components/ModalResena.vue'
 
-const userController = inject('userController')
+const authController = inject('authController')
+const carteleraController = inject('carteleraController')
+const truequeController = inject('truequeController')
 const usuarioActual = ref(null)
 const cargandoSesion = ref(true)
 const procesandoLogin = ref(false)
@@ -157,6 +193,14 @@ const seccionActiva = ref('cartelera')
 const tipoRegistroActivo = ref('')
 const mensajeBienvenida = ref('')
 const loginForm = reactive({ username: '', password: '' })
+
+const seccionInicialParaUsuario = (usuario) => (usuario?.esComercio ? 'red-comercial' : 'cartelera')
+
+const normalizarSeccionComercio = () => {
+  if (usuarioActual.value?.esComercio && ['cartelera', 'publicar', 'comunidad'].includes(seccionActiva.value)) {
+    seccionActiva.value = 'red-comercial'
+  }
+}
 
 const notificacionesVisibles = ref([])
 const misTrueques = ref([])
@@ -193,10 +237,6 @@ const limpiarPropuestaConfig = () => {
   })
 }
 
-const filtrarNotificacionesAccionables = (notificaciones) => (
-  (notificaciones || []).filter((notif) => notif.estado === 'PENDIENTE')
-)
-
 const notificacionesAccionables = computed(() => notificacionesVisibles.value)
 
 const obtenerContraparteNombre = (trueque) => {
@@ -230,29 +270,22 @@ const revisarResenaPendiente = () => {
 
 const cargarDatosHu4 = async (opciones = {}) => {
   const { omitirModalesAutomaticos = false } = opciones
-  if (!usuarioActual.value) return
+  if (!usuarioActual.value || usuarioActual.value.esComercio) return
 
   try {
-    const [notificacionesData, truequesData, misPublicaciones] = await Promise.all([
-      userController.obtenerNotificaciones(false),
-      userController.obtenerMisTrueques(),
-      userController.obtenerMisPublicaciones(),
-    ])
+    const datos = await truequeController.cargarDatosHu4(carteleraController)
 
-    misTrueques.value = truequesData.trueques || []
-    notificacionesVisibles.value = filtrarNotificacionesAccionables(
-      notificacionesData.notificaciones,
-    )
+    misTrueques.value = datos.trueques || []
+    notificacionesVisibles.value = datos.notificaciones || []
 
     if (!omitirModalesAutomaticos) {
-      // Login normal: notificaciones primero; reseña solo si no hay panel de notificaciones.
       if (notificacionesVisibles.value.length && !mostrarModalPropuesta.value && !mostrarModalNotificaciones.value) {
         mostrarModalNotificaciones.value = true
       }
       revisarResenaPendiente()
     }
 
-    return { misPublicaciones }
+    return { misPublicaciones: datos.misPublicaciones }
   } catch {
     notificacionesVisibles.value = []
     misTrueques.value = []
@@ -262,7 +295,7 @@ const cargarDatosHu4 = async (opciones = {}) => {
 const abrirModalPropuesta = async (config) => {
   const misPublicaciones = config.misPublicaciones?.length
     ? config.misPublicaciones
-    : await userController.obtenerMisPublicaciones()
+    : await carteleraController.obtenerMisPublicaciones()
 
   Object.assign(propuestaConfig, {
     receptorId: config.receptorId,
@@ -285,11 +318,11 @@ const abrirModalPropuestaDesdeTrueque = async (trueque) => {
   const soyEmisor = Number(trueque.emisor) === Number(usuarioActual.value.id)
   const contraparteId = soyEmisor ? trueque.receptor : trueque.emisor
   const contraparteNombre = obtenerContraparteNombre(trueque)
-  const misPublicaciones = await userController.obtenerMisPublicaciones()
+  const misPublicaciones = await carteleraController.obtenerMisPublicaciones()
   let publicacionesVecino = []
 
   try {
-    const perfil = await userController.obtenerPerfilUsuario(contraparteId)
+    const perfil = await authController.obtenerPerfilUsuario(contraparteId)
     publicacionesVecino = perfil.publicaciones || []
   } catch {
     publicacionesVecino = []
@@ -324,7 +357,7 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
 
   let publicacionesVecino = []
   try {
-    const perfil = await userController.obtenerPerfilUsuario(notif.remitente_id)
+    const perfil = await authController.obtenerPerfilUsuario(notif.remitente_id)
     publicacionesVecino = perfil.publicaciones || []
   } catch {
     publicacionesVecino = []
@@ -333,7 +366,7 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
   await abrirModalPropuesta({
     receptorId: notif.remitente_id,
     receptorNombre: notif.remitente_nombre,
-    misPublicaciones: await userController.obtenerMisPublicaciones(),
+    misPublicaciones: await carteleraController.obtenerMisPublicaciones(),
     publicacionesVecino,
     truequeIdOrigen: notif.trueque_id || null,
   })
@@ -348,7 +381,7 @@ const onPropuestaCreada = async () => {
   const truequeId = propuestaConfig.truequeIdOrigen
   if (truequeId) {
     try {
-      await userController.marcarNotificacionesTruequeLeidas(truequeId)
+      await truequeController.marcarNotificacionesTruequeLeidas(truequeId)
     } catch {
       // Ignorar errores al marcar notificaciones del match.
     }
@@ -393,8 +426,10 @@ provide('hu4', {
 
 const cargarSesion = async () => {
   try {
-    usuarioActual.value = await userController.obtenerSesionActual()
+    usuarioActual.value = await authController.obtenerSesionActual()
     if (usuarioActual.value) {
+      seccionActiva.value = seccionInicialParaUsuario(usuarioActual.value)
+      normalizarSeccionComercio()
       await cargarDatosHu4()
     }
   } finally {
@@ -407,8 +442,8 @@ const iniciarSesion = async () => {
   loginError.value = ''
 
   try {
-    usuarioActual.value = await userController.iniciarSesion(loginForm)
-    seccionActiva.value = 'cartelera'
+    usuarioActual.value = await authController.iniciarSesion(loginForm)
+    seccionActiva.value = seccionInicialParaUsuario(usuarioActual.value)
     tipoRegistroActivo.value = ''
     loginForm.username = ''
     loginForm.password = ''
@@ -423,10 +458,16 @@ const iniciarSesion = async () => {
 const iniciarSesionDespuesDeRegistro = async (credenciales) => {
   try {
     if (credenciales.esNuevoMiembro) {
-      usuarioActual.value = await userController.obtenerSesionActual()
-        || await userController.iniciarSesion(credenciales)
-      mensajeBienvenida.value = '¡Bienvenido, Miembro Activo! Tu perfil y primer talento ya están publicados en la comunidad.'
-      seccionActiva.value = 'perfil'
+      usuarioActual.value = await authController.procesarSesionPostRegistro(credenciales)
+
+      if (credenciales.esComercio) {
+        mensajeBienvenida.value = '¡Bienvenido, Comercio Afiliado! Ya puedes emitir vuelto comercial en la Red Comercial.'
+        seccionActiva.value = 'red-comercial'
+      } else {
+        mensajeBienvenida.value = '¡Bienvenido, Miembro Activo! Tu perfil y primer talento ya están publicados en la comunidad.'
+        seccionActiva.value = 'perfil'
+      }
+
       tipoRegistroActivo.value = ''
       loginForm.username = ''
       loginForm.password = ''
@@ -451,7 +492,7 @@ const mostrarRegistroComercio = () => {
 }
 
 const cerrarSesion = async () => {
-  await userController.cerrarSesion()
+  await authController.cerrarSesion()
   usuarioActual.value = null
   seccionActiva.value = 'cartelera'
   notificacionesVisibles.value = []
@@ -462,7 +503,7 @@ const cerrarSesion = async () => {
 }
 
 watch(seccionActiva, async (nueva) => {
-  if (usuarioActual.value && ['perfil', 'comunidad', 'cartelera'].includes(nueva)) {
+  if (usuarioActual.value && !usuarioActual.value.esComercio && ['perfil', 'comunidad', 'cartelera'].includes(nueva)) {
     await cargarDatosHu4()
   }
 })

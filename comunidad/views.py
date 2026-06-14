@@ -7,7 +7,6 @@ from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ValidationError
 
 from .models import Publicacion, SaldoComercial, Usuario
-from .repositories import AcuerdoTruequeRepository, PublicacionRepository, ResenaRepository, UsuarioRepository
 from .serializers import (
     AcuerdoTruequeSerializer,
     MatchEnriquecidoSerializer,
@@ -16,14 +15,17 @@ from .serializers import (
     ResenaSerializer,
     SaldoComercialSerializer,
     UsuarioSerializer,
+    ClienteBasicoSerializer,
 )
 from .services import (
     BusinessError,
     CarteleraService,
     CargaUsuariosService,
     ComercioService,
+    ComunidadService,
     MatchmakingService,
     NotificacionService,
+    PerfilService,
     PublicacionService,
     RegistroUsuarioService,
     ResenaService,
@@ -41,8 +43,7 @@ def manejar_error(error):
 
 
 def es_miembro_activo(usuario):
-    nombre = (usuario.nombre_real or "").strip()
-    return bool(nombre and Publicacion.objects.filter(usuario=usuario).exists())
+    return ComunidadService.es_miembro_activo(usuario)
 
 
 class CargarUsuariosCSVView(APIView):
@@ -221,7 +222,7 @@ class FinalizarTruequeView(APIView):
     def post(self, request, trueque_id):
         try:
             resultado = self.servicio.finalizar_trueque(request.user, trueque_id)
-            trueque = AcuerdoTruequeRepository().obtener_por_participante(trueque_id, request.user)
+            trueque = self.servicio.obtener_por_participante(trueque_id, request.user)
             return Response({
                 "message": resultado.get("mensaje", ""),
                 "estado": trueque.estado,
@@ -253,6 +254,7 @@ class RegistrarResenaView(APIView):
 
 class EmitirVueltoComercialView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -260,8 +262,14 @@ class EmitirVueltoComercialView(APIView):
 
     def post(self, request):
         try:
-            mensaje = self.servicio.emitir_vuelto(request.user, request.data)
-            return Response({"message": mensaje})
+            resultado = self.servicio.emitir_vuelto(request.user, request.data)
+            comprobante = SaldoComercialSerializer(resultado["comprobante"]).data
+            return Response({
+                "message": resultado["mensaje"],
+                "comprobante": comprobante,
+                "saldo_cliente": float(resultado["saldo_cliente"]),
+                "saldo_comercio": float(resultado["saldo_comercio"]),
+            })
         except BusinessError as error:
             return manejar_error(error)
 
@@ -324,8 +332,12 @@ class CrearPropuestaView(APIView):
 class MisTruequesView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or TruequeService()
+
     def get(self, request):
-        trueques = AcuerdoTruequeRepository().listar_por_usuario(request.user)
+        trueques = self.servicio.listar_por_usuario(request.user)
         serializer = AcuerdoTruequeSerializer(
             trueques,
             many=True,
@@ -369,8 +381,32 @@ class CatalogoComerciosView(generics.ListAPIView):
         return self.servicio.listar_comercios()
 
 
+class CatalogoClientesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ComercioService()
+
+    def get(self, request):
+        try:
+            if not request.user.es_comercio:
+                raise BusinessError(
+                    "Solo comercios pueden consultar el listado de clientes.",
+                    status_code=403,
+                )
+
+            termino = request.query_params.get("q")
+            clientes = self.servicio.listar_clientes(termino)
+            data = ClienteBasicoSerializer(clientes, many=True).data
+            return Response(data, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
 class PagarConSaldoView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
 
     def __init__(self, *args, servicio=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -378,8 +414,14 @@ class PagarConSaldoView(APIView):
 
     def post(self, request):
         try:
-            mensaje = self.servicio.pagar_con_saldo(request.user, request.data)
-            return Response({"message": mensaje})
+            resultado = self.servicio.pagar_con_saldo(request.user, request.data)
+            comprobante = SaldoComercialSerializer(resultado["comprobante"]).data
+            return Response({
+                "message": resultado["mensaje"],
+                "comprobante": comprobante,
+                "saldo_restante": float(resultado["saldo_restante"]),
+                "saldo_comercio": float(resultado["saldo_comercio"]),
+            })
         except BusinessError as error:
             return manejar_error(error)
 
@@ -387,16 +429,14 @@ class PagarConSaldoView(APIView):
 class VerPerfilUsuarioView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or PerfilService()
+
     def get(self, request, usuario_id):
         try:
-            usuario_repository = UsuarioRepository()
-            publicacion_repository = PublicacionRepository()
-            resena_repository = ResenaRepository()
-
-            usuario = usuario_repository.obtener_por_id(usuario_id)
-            publicaciones_activas = publicacion_repository.listar_por_usuario(usuario, solo_activas=True)
+            usuario, publicaciones_activas, resenas_recibidas = self.servicio.obtener_perfil_publico(usuario_id)
             publicaciones_data = PublicacionSerializer(publicaciones_activas, many=True).data
-            resenas_recibidas = resena_repository.listar_por_calificado(usuario)
             resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
 
             return Response({
@@ -421,22 +461,19 @@ class VerSaldoComercialView(APIView):
 
     def get(self, request):
         try:
-            from .repositories import SaldoComercialRepository
-            saldo_repository = SaldoComercialRepository()
-            
-            # Obtener saldo actual del usuario
-            saldo_actual = request.user.saldo_comercial
+            usuario_actual = Usuario.objects.obtener_por_id(request.user.id)
+            saldo_actual = usuario_actual.saldo_comercial
             
             # Obtener movimientos del usuario como cliente
             movimientos_cliente = SaldoComercial.objects.filter(
-                cliente=request.user
+                cliente=usuario_actual
             ).order_by('-fecha')
             
             # Obtener movimientos del usuario como comercio (si es comercio)
             movimientos_comercio = []
-            if request.user.es_comercio:
+            if usuario_actual.es_comercio:
                 movimientos_comercio = SaldoComercial.objects.filter(
-                    comercio=request.user
+                    comercio=usuario_actual
                 ).order_by('-fecha')
             
             serializer_cliente = SaldoComercialSerializer(movimientos_cliente, many=True)
@@ -446,7 +483,7 @@ class VerSaldoComercialView(APIView):
                 "saldo_actual": float(saldo_actual),
                 "movimientos_como_cliente": serializer_cliente.data,
                 "movimientos_como_comercio": serializer_comercio.data,
-                "es_comercio": request.user.es_comercio
+                "es_comercio": usuario_actual.es_comercio
             }, status=status.HTTP_200_OK)
             
         except Exception as error:
@@ -459,36 +496,28 @@ class VerSaldoComercialView(APIView):
 class VerMiPerfilView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or PerfilService()
+
     def get(self, request):
         try:
-            from .models import AcuerdoTrueque
-
-            publicacion_repository = PublicacionRepository()
-            resena_repository = ResenaRepository()
-
-            publicaciones = publicacion_repository.listar_por_usuario(request.user)
-            publicaciones_activas = [publicacion for publicacion in publicaciones if publicacion.esta_activa]
-            publicaciones_pausadas = [publicacion for publicacion in publicaciones if not publicacion.esta_activa]
-
-            resenas_recibidas = resena_repository.listar_por_calificado(request.user)
-            trueques_enviados = AcuerdoTrueque.objects.filter(emisor=request.user)
-            trueques_recibidos = AcuerdoTrueque.objects.filter(receptor=request.user)
-
-            resenas_data = ResenaSerializer(resenas_recibidas, many=True).data
+            datos = self.servicio.obtener_mi_perfil(request.user)
+            resenas_data = ResenaSerializer(datos["resenas_recibidas"], many=True).data
 
             return Response({
                 "usuario": UsuarioSerializer(request.user).data,
                 "promedio_estrellas": request.user.promedio_estrellas,
-                "publicaciones": PublicacionSerializer(publicaciones, many=True).data,
-                "publicaciones_activas": PublicacionSerializer(publicaciones_activas, many=True).data,
-                "publicaciones_pausadas": PublicacionSerializer(publicaciones_pausadas, many=True).data,
+                "publicaciones": PublicacionSerializer(datos["publicaciones"], many=True).data,
+                "publicaciones_activas": PublicacionSerializer(datos["publicaciones_activas"], many=True).data,
+                "publicaciones_pausadas": PublicacionSerializer(datos["publicaciones_pausadas"], many=True).data,
                 "resenas_recibidas": resenas_data,
                 "cantidad_resenas": len(resenas_data),
-                "trueques_enviados_count": trueques_enviados.count(),
-                "trueques_recibidos_count": trueques_recibidos.count(),
+                "trueques_enviados_count": datos["trueques_enviados_count"],
+                "trueques_recibidos_count": datos["trueques_recibidos_count"],
                 "saldo_comercial": float(request.user.saldo_comercial),
                 "es_miembro_activo": es_miembro_activo(request.user),
-                "cantidad_publicaciones_pausadas": len(publicaciones_pausadas),
+                "cantidad_publicaciones_pausadas": len(datos["publicaciones_pausadas"]),
             }, status=status.HTTP_200_OK)
 
         except Exception as error:
@@ -501,10 +530,13 @@ class VerMiPerfilView(APIView):
 class MisPublicacionesView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or PerfilService()
+
     def get(self, request):
         try:
-            publicacion_repository = PublicacionRepository()
-            publicaciones = publicacion_repository.listar_por_usuario(request.user)
+            publicaciones = self.servicio.listar_mis_publicaciones(request.user)
             publicaciones_data = PublicacionSerializer(publicaciones, many=True).data
 
             return Response({
@@ -522,31 +554,12 @@ class MisPublicacionesView(APIView):
 class DirectorioComunidadView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ComunidadService()
+
     def get(self, request):
-        publicacion_repository = PublicacionRepository()
-        miembros = Usuario.objects.filter(
-            is_active=True,
-            is_staff=False,
-            is_superuser=False,
-        ).order_by("nombre_real", "username")
-
-        directorio = []
-        for miembro in miembros:
-            publicaciones = publicacion_repository.listar_por_usuario(miembro)
-            talentos_activos = [
-                publicacion for publicacion in publicaciones
-                if publicacion.tipo == "TALENTO" and publicacion.esta_activa
-            ]
-
-            directorio.append({
-                "id": miembro.id,
-                "nombre_real": miembro.nombre_real,
-                "username": miembro.username,
-                "promedio_estrellas": miembro.promedio_estrellas,
-                "talentos_principales": [publicacion.titulo for publicacion in talentos_activos[:3]],
-                "cantidad_talentos": len(talentos_activos),
-                "es_miembro_activo": es_miembro_activo(miembro),
-            })
+        directorio = self.servicio.obtener_directorio()
 
         return Response({
             "miembros": directorio,

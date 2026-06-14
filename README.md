@@ -286,3 +286,33 @@ print(f"• Comercio B (nom_usuario_comercio2) -> Balance Neto: {comercio_B.sald
 print(f"======================================================")
 
 ```
+
+#### Validacion manual en frontend (Red Comercial)
+
+Requisitos: backend en `http://127.0.0.1:8000`, frontend en `http://127.0.0.1:5173`, migraciones aplicadas (`python manage.py migrate`).
+
+**A) Login como CLIENTE (vecino)**
+
+1. Ir a **Perfil**: deben verse estrellas, horas de vida y saldo comercial (si > 0).
+2. Ir a **Red Comercial**: tarjeta "Saldo a favor comercial"; panel "Pagar con saldo comercial"; sin panel de emision.
+3. Campana de **Notificaciones** visible (HU4).
+4. Emitir vuelto en Comercio A (desde cuenta comercio) y pagar en Comercio B con ese saldo (interoperabilidad).
+
+**B) Login como COMERCIO**
+
+1. Ir a **Perfil**: sin estrellas, horas ni saldo comercial; badge "Comercio Afiliado" y enlace a Red Comercial.
+2. Ir a **Red Comercial**: solo "Balance comercial del comercio"; panel "Emitir vuelto por falta de cambio"; sin panel de pago.
+3. Emitir vuelto con **valor del producto** + **monto recibido**; el excedente se calcula automaticamente.
+4. Sin campana de notificaciones HU4; no se abre modal de propuestas al entrar.
+
+**C) Regresion HU4 (usuario normal)**
+
+Matches, propuestas, reseñas y modales HU4 siguen funcionando igual.
+
+#### Tests automaticos HU5
+
+```bash
+python manage.py test comunidad.tests.test_hu4 comunidad.tests.test_hu4_api comunidad.tests.test_hu5 comunidad.tests.test_hu5_api
+```
+
+Deben pasar 83 tests sin regresiones.

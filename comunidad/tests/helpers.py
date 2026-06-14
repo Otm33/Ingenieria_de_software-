@@ -1,5 +1,7 @@
 """Helpers compartidos para pruebas de HU4 (Emparejamiento y Gestión de Acuerdos)."""
 
+from decimal import Decimal
+
 from comunidad.models import AcuerdoTrueque, Publicacion, Resena, Usuario
 
 CATEGORIA_MANTENIMIENTO = "Mantenimiento, Reparaciones y Construcción"
@@ -15,6 +17,18 @@ def crear_usuario(username, email, nombre_real, horas=0.0, **kwargs):
         password="testpass123",
         nombre_real=nombre_real,
         horas_de_vida=horas,
+        **kwargs,
+    )
+
+
+def crear_comercio(username, email, nombre_real, saldo=Decimal("0.00"), **kwargs):
+    """Crea un comercio activo con saldo comercial inicial."""
+    return crear_usuario(
+        username,
+        email,
+        nombre_real,
+        es_comercio=True,
+        saldo_comercial=saldo,
         **kwargs,
     )
 

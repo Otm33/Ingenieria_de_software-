@@ -208,6 +208,11 @@ a { color: inherit; }
   text-decoration: underline;
 }
 
+.link-button--active {
+  color: var(--primary);
+  font-weight: 800;
+}
+
 .session-box {
   display: flex;
   align-items: center;

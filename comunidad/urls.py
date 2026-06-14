@@ -17,6 +17,7 @@ from .views import (
     CrearPropuestaView,
     ResponderPropuestaView,
     CatalogoComerciosView,
+    CatalogoClientesView,
     PagarConSaldoView,
     VerPerfilUsuarioView,
     VerSaldoComercialView,
@@ -60,6 +61,7 @@ urlpatterns = [
     # Saldos comerciales
     path('comercio/emitir-vuelto/', EmitirVueltoComercialView.as_view(), name='emitir_vuelto'),
     path('comercios/', CatalogoComerciosView.as_view(), name='catalogo_comercios'),
+    path('clientes/', CatalogoClientesView.as_view(), name='catalogo_clientes'),
     path('comercio/pagar/', PagarConSaldoView.as_view(), name='pagar_con_saldo'),
     path('mi-saldo-comercial/', VerSaldoComercialView.as_view(), name='ver_saldo_comercial'),
 ]

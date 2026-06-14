@@ -226,7 +226,9 @@
  */
 import { computed, inject, onMounted, ref, watch } from 'vue';
 
-const userController = inject('userController');
+const authController = inject('authController');
+const carteleraController = inject('carteleraController');
+const comunidadController = inject('comunidadController');
 const hu4 = inject('hu4', null);
 
 const AVATAR_COLORS = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
@@ -254,7 +256,7 @@ const sincronizarSesion = async () => {
     sesionLocalId.value = hu4.usuarioActualId.value
     return
   }
-  const sesion = await userController.obtenerSesionActual()
+  const sesion = await authController.obtenerSesionActual()
   sesionLocalId.value = sesion?.id ?? null
 };
 
@@ -300,7 +302,7 @@ const cargarComunidad = async () => {
   error.value = '';
 
   try {
-    const data = await userController.obtenerComunidad();
+    const data = await comunidadController.obtenerComunidad();
     miembros.value = data.miembros || [];
   } catch (err) {
     error.value = err.message || 'No se pudo cargar el directorio de la comunidad.';
@@ -317,7 +319,7 @@ const verDetalle = async (miembro) => {
   detallePerfil.value = null;
 
   try {
-    detallePerfil.value = await userController.obtenerPerfilUsuario(miembro.id);
+    detallePerfil.value = await authController.obtenerPerfilUsuario(miembro.id);
   } catch (err) {
     errorDetalle.value = err.message || 'No se pudo cargar el perfil del miembro.';
   } finally {
@@ -346,7 +348,7 @@ const elegirModoPropuesta = async (modo) => {
 
   mostrarSelectorModo.value = false;
 
-  const misPublicaciones = await userController.obtenerMisPublicaciones();
+  const misPublicaciones = await carteleraController.obtenerMisPublicaciones();
   const config = {
     receptorId: detallePerfil.value.usuario.id,
     receptorNombre: detallePerfil.value.nombre_real,

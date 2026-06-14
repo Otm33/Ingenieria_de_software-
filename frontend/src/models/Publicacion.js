@@ -22,5 +22,23 @@ export default class Publicacion {
     this.categoria = categoria
     this.urgencia = urgencia
     this.estaActiva = Boolean(esta_activa)
+    this.esta_activa = this.estaActiva
+  }
+
+  esCritica() {
+    return this.urgencia === 'CRITICA'
+  }
+
+  esAlta() {
+    return this.urgencia === 'ALTA'
+  }
+
+  etiquetaUrgencia() {
+    const etiquetas = {
+      NORMAL: 'Normal',
+      ALTA: 'Alta',
+      CRITICA: 'Critica',
+    }
+    return etiquetas[this.urgencia] || this.urgencia
   }
 }

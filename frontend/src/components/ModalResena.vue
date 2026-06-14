@@ -65,7 +65,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'enviada'])
 
-const userController = inject('userController')
+const resenaController = inject('resenaController')
 const estrellas = ref(5)
 const comentario = ref('')
 const enviando = ref(false)
@@ -93,21 +93,16 @@ const cerrar = () => {
 }
 
 const enviar = async () => {
-  if (!props.truequeId) {
-    error.value = 'No se identificó el trueque.'
-    return
-  }
-
-  if (props.estadoTrueque && props.estadoTrueque !== 'FINALIZADO') {
-    error.value = 'Solo puedes dejar reseña de trueques finalizados.'
-    return
-  }
-
   enviando.value = true
   error.value = ''
 
   try {
-    await userController.registrarResena(props.truequeId, estrellas.value, comentario.value.trim())
+    await resenaController.registrarResena(
+      props.truequeId,
+      estrellas.value,
+      comentario.value,
+      props.estadoTrueque,
+    )
     limpiarFormulario()
     emit('enviada')
     emit('update:visible', false)

@@ -19,14 +19,15 @@
             <div class="perfil-datos-principales">
               <div class="perfil-nombre-fila">
                 <h3>{{ datosPerfil.usuario.nombre_real }}</h3>
-                <span v-if="esMiembroActivo" class="badge badge--activa">Miembro Activo</span>
+                <span v-if="esComercioAfiliado" class="badge badge--activa">Comercio Afiliado</span>
+                <span v-else-if="esMiembroActivo" class="badge badge--activa">Miembro Activo</span>
               </div>
               <p class="perfil-username">@{{ datosPerfil.usuario.username }}</p>
               <p class="perfil-email">{{ datosPerfil.usuario.email }}</p>
             </div>
           </div>
 
-          <div class="perfil-estadisticas">
+          <div v-if="!esComercioAfiliado" class="perfil-estadisticas">
             <div class="estadistica-card">
               <div class="estadistica-icon">ESTRELLAS</div>
               <div class="estadistica-info">
@@ -41,8 +42,36 @@
                 <div class="estadistica-label">Horas de Vida</div>
               </div>
             </div>
+            <div v-if="tieneSaldoComercial" class="estadistica-card">
+              <div class="estadistica-icon">SALDO</div>
+              <div class="estadistica-info">
+                <div class="estadistica-valor">{{ saldoComercial.toFixed(2) }}</div>
+                <div class="estadistica-label">Saldo a favor</div>
+              </div>
+            </div>
           </div>
 
+          <template v-if="esComercioAfiliado">
+            <p class="alert alert--info perfil-comercial-aviso">
+              Tu cuenta es comercial; gestiona operaciones en Red Comercial.
+            </p>
+            <p class="perfil-comercial-resumen">
+              Consulta tu balance e historial de movimientos en Red Comercial.
+            </p>
+            <p class="perfil-red-comercial-link">
+              <button class="link-button" type="button" @click="irRedComercial">
+                Ir a Red Comercial →
+              </button>
+            </p>
+          </template>
+
+          <p v-else-if="tieneSaldoComercial" class="perfil-red-comercial-link">
+            <button class="link-button" type="button" @click="irRedComercial">
+              Ir a Red Comercial →
+            </button>
+          </p>
+
+          <template v-if="!esComercioAfiliado">
           <div class="perfil-seccion">
             <h4>Publicaciones Activas ({{ publicacionesActivas.length }})</h4>
             <div v-if="publicacionesActivas.length === 0" class="empty-state">
@@ -202,6 +231,7 @@
               </div>
             </div>
           </div>
+          </template>
         </div>
       </div>
     </div>
@@ -211,7 +241,10 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, reactive, ref } from 'vue'
 
-const userController = inject('userController')
+const emit = defineEmits(['ir-red-comercial'])
+
+const authController = inject('authController')
+const truequeController = inject('truequeController')
 const hu4 = inject('hu4', null)
 const datosPerfil = ref(null)
 const cargando = ref(true)
@@ -264,6 +297,14 @@ const cantidadResenas = computed(() => {
   return datosPerfil.value.resenas_recibidas?.length ?? 0
 })
 
+const esComercioAfiliado = computed(() => Boolean(datosPerfil.value?.usuario?.es_comercio))
+
+const tieneSaldoComercial = computed(() => datosPerfil.value?.saldo_comercial != null)
+
+const saldoComercial = computed(() => Number(datosPerfil.value?.saldo_comercial ?? 0))
+
+const irRedComercial = () => emit('ir-red-comercial')
+
 const nombreCalificador = (resena) => {
   if (resena.calificador_username) return resena.calificador_username
   if (resena.calificador?.username) return resena.calificador.username
@@ -273,7 +314,7 @@ const nombreCalificador = (resena) => {
 
 const cargarPerfil = async () => {
   try {
-    const response = await userController.obtenerMiPerfil()
+    const response = await authController.obtenerMiPerfil()
     datosPerfil.value = response
   } catch (err) {
     error.value = 'Error al cargar el perfil: ' + (err.message || 'Error desconocido')
@@ -285,7 +326,7 @@ const cargarPerfil = async () => {
 const cargarMisTrueques = async () => {
   cargandoTrueques.value = true
   try {
-    const data = await userController.obtenerMisTrueques()
+    const data = await truequeController.obtenerMisTrueques()
     misTrueques.value = data.trueques || []
   } catch {
     misTrueques.value = []
@@ -354,7 +395,7 @@ const confirmarFinalizacion = async (trueque) => {
   feedbackTruequeOk[trueque.id] = false
 
   try {
-    const resultado = await userController.finalizarTrueque(trueque.id)
+    const resultado = await truequeController.finalizarTrueque(trueque.id)
     feedbackTruequeOk[trueque.id] = true
     feedbackTrueque[trueque.id] = resultado.message || 'Confirmación registrada.'
     await cargarPerfil()
@@ -411,11 +452,14 @@ const getAvatarColor = () => {
 }
 
 const refrescarVistaPerfil = async () => {
-  await Promise.all([cargarPerfil(), cargarMisTrueques()])
+  await cargarPerfil()
+  if (!datosPerfil.value?.usuario?.es_comercio) {
+    await cargarMisTrueques()
+  }
 }
 
 onMounted(async () => {
-  const sesion = await userController.obtenerSesionActual()
+  const sesion = await authController.obtenerSesionActual()
   usuarioActualId.value = sesion?.id ?? null
   if (hu4?.registrarRefrescarPerfil) {
     hu4.registrarRefrescarPerfil(refrescarVistaPerfil)
@@ -500,6 +544,16 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem;
+}
+
+.perfil-red-comercial-link {
+  margin: 0 0 1rem;
+}
+
+.perfil-comercial-resumen {
+  margin: 0 0 0.5rem;
+  color: #666;
+  font-size: 0.9rem;
 }
 
 .estadistica-card {

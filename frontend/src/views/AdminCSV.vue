@@ -71,7 +71,7 @@
 import { inject, ref } from 'vue';
 
 // CAMBIO VISTA: la vista delega la persistencia CSV al controlador instanciado.
-const userController = inject('userController');
+const adminController = inject('adminController');
 const archivo = ref(null);
 const mensaje = ref('');
 const error = ref('');
@@ -83,34 +83,23 @@ const seleccionarArchivo = (event) => {
   mensaje.value = '';
   error.value = '';
 
-  if (!file) {
+  try {
+    const resultado = adminController.validarSeleccionArchivo(file);
+    archivo.value = resultado.archivo;
+  } catch (err) {
     archivo.value = null;
-    return;
+    event.target.value = '';
+    error.value = err.message || 'Formato incorrecto. Solo se acepta .csv.';
   }
-
-  if (file.name.toLowerCase().endsWith('.csv')) {
-    archivo.value = file;
-    return;
-  }
-
-  archivo.value = null;
-  event.target.value = '';
-  error.value = 'Formato incorrecto. Solo se acepta .csv.';
 };
 
 const subirArchivo = async () => {
-  if (!archivo.value) {
-    error.value = 'Selecciona un archivo CSV antes de procesar.';
-    return;
-  }
-
   mensaje.value = '';
   error.value = '';
   procesando.value = true;
 
   try {
-    // CAMBIO VISTA: el archivo pasa por controlador -> servicio -> API Django -> BD.
-    const response = await userController.cargarUsuariosAutorizados(archivo.value);
+    const response = await adminController.cargarUsuariosAutorizados(archivo.value);
     mensaje.value = response.mensaje || response.message || 'Archivo procesado correctamente.';
   } catch (err) {
     error.value = err.message || 'Error al procesar el archivo.';

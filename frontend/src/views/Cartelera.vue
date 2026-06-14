@@ -298,7 +298,9 @@ const emit = defineEmits(['volver-cartelera']);
 // Desestructurar props para usar en el template
 const { modoPublicar } = toRefs(props);
 
-const userController = inject('userController');
+const authController = inject('authController');
+const carteleraController = inject('carteleraController');
+const truequeController = inject('truequeController');
 const hu4 = inject('hu4', null);
 const publicaciones = ref([]);
 const misPublicaciones = ref([]);
@@ -358,7 +360,7 @@ const cargarMisPublicaciones = async () => {
 
   cargandoMisPublicaciones.value = true;
   try {
-    const resultado = await userController.obtenerMisPublicaciones();
+    const resultado = await carteleraController.obtenerMisPublicaciones();
     misPublicaciones.value = Array.isArray(resultado) ? resultado : [];
   } catch {
     misPublicaciones.value = [];
@@ -393,7 +395,7 @@ const obtenerPublicaciones = async (conFiltros = false) => {
       publicacionSeleccionadaId.value = null;
     }
 
-    const todasPublicaciones = await userController.obtenerCartelera(params);
+    const todasPublicaciones = await carteleraController.obtenerCartelera(params);
     publicaciones.value = todasPublicaciones.filter((pub) => pub.usuario !== usuarioActualId.value);
   } catch (err) {
     errorFiltro.value = 'No se pudo cargar la cartelera. Verifica que el backend esté activo.';
@@ -439,8 +441,8 @@ const verCoincidencias = async () => {
   coincidenciasExitosas.value = false;
 
   try {
-    const coincidencia = await userController.verificarCoincidenciaPorTitulo(pub.id);
-    const { matches } = await userController.obtenerMatchesEnriquecidos(pub.id);
+    const coincidencia = await truequeController.verificarCoincidenciaPorTitulo(pub.id);
+    const { matches } = await truequeController.obtenerMatchesEnriquecidos(pub.id);
 
     if (!coincidencia.tiene_coincidencia && !matches.length) {
       feedbackCoincidencias.value = 'No se encontraron coincidencias por título para esta publicación.';
@@ -449,12 +451,12 @@ const verCoincidencias = async () => {
 
     const tipoVecino = pub.tipo;
     const tipoMi = pub.tipo === 'TALENTO' ? 'NECESIDAD' : 'TALENTO';
-    const misPublicaciones = await userController.obtenerMisPublicaciones();
+    const misPublicaciones = await carteleraController.obtenerMisPublicaciones();
 
     if (matches.length) {
       const match = matches[0];
       const sugerencia = match?.publicacionesSugeridas?.[0];
-      const perfilVecino = await userController.obtenerPerfilUsuario(match.usuario.id);
+      const perfilVecino = await authController.obtenerPerfilUsuario(match.usuario.id);
 
       await hu4.abrirModalPropuesta({
         receptorId: match.usuario.id,
@@ -467,7 +469,7 @@ const verCoincidencias = async () => {
         publicacionReceptorId: sugerencia?.su_pub_id || pub.id,
       });
     } else {
-      const perfilVecino = await userController.obtenerPerfilUsuario(pub.usuario);
+      const perfilVecino = await authController.obtenerPerfilUsuario(pub.usuario);
 
       await hu4.abrirModalPropuesta({
         receptorId: pub.usuario,
@@ -517,7 +519,7 @@ const actualizarEstadoPublicacion = async (publicacion) => {
   feedbackEstadoExitoso.value = false;
 
   try {
-    await userController.actualizarEstadoPublicacion(publicacion.id, reactivar);
+    await carteleraController.actualizarEstadoPublicacion(publicacion.id, reactivar);
     feedbackEstadoExitoso.value = true;
     feedbackEstadoPublicacion.value = reactivar
       ? 'Publicación reactivada correctamente.'
@@ -537,7 +539,7 @@ const publicarServicio = async () => {
   publicacionExitosa.value = false;
 
   try {
-    const nuevaPublicacion = await userController.crearPublicacion({ ...formPublicacion });
+    const nuevaPublicacion = await carteleraController.crearPublicacion({ ...formPublicacion });
     publicacionExitosa.value = true;
     feedbackPublicacion.value = 'Publicación creada correctamente.';
     
@@ -577,7 +579,7 @@ const etiquetaUrgencia = (urgencia) => {
 const estrellas = (valor) => Number(valor || 5).toFixed(1);
 
 onMounted(async () => {
-  const sesion = await userController.obtenerSesionActual();
+  const sesion = await authController.obtenerSesionActual();
   if (sesion) {
     usuarioActualId.value = sesion.id;
   }

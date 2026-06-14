@@ -91,7 +91,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'creada'])
 
-const userController = inject('userController')
+const truequeController = inject('truequeController')
 const publicacionEmisorId = ref('')
 const publicacionReceptorId = ref('')
 const enviando = ref(false)
@@ -174,34 +174,6 @@ const puedeEnviar = computed(() => (
   && publicacionesVecinoFiltradas.value.length > 0
 ))
 
-const validarCombinacion = () => {
-  if (!esModoComunidad.value) return true
-
-  const mi = publicacionEmisorSeleccionada.value
-  const vecino = publicacionReceptorSeleccionada.value
-
-  if (!mi || !vecino) {
-    error.value = 'Selecciona ambas publicaciones para continuar.'
-    return false
-  }
-
-  if (props.modoPropuesta === 'pedir_ayuda') {
-    if (mi.tipo !== 'NECESIDAD' || vecino.tipo !== 'TALENTO') {
-      error.value = 'En este modo debes elegir tu necesidad y un talento del vecino.'
-      return false
-    }
-  }
-
-  if (props.modoPropuesta === 'ofrecer_ayuda') {
-    if (mi.tipo !== 'TALENTO' || vecino.tipo !== 'NECESIDAD') {
-      error.value = 'En este modo debes elegir tu talento y una necesidad del vecino.'
-      return false
-    }
-  }
-
-  return true
-}
-
 const aplicarPreseleccion = () => {
   publicacionEmisorId.value = props.publicacionEmisorPreseleccionada || ''
   publicacionReceptorId.value = props.publicacionReceptorPreseleccionada || ''
@@ -220,23 +192,20 @@ const cerrar = () => {
 }
 
 const confirmar = async () => {
-  if (!props.receptorId) {
-    error.value = 'Falta el receptor de la propuesta.'
-    return
-  }
-
-  if (!validarCombinacion()) {
-    return
-  }
-
   enviando.value = true
   error.value = ''
 
   try {
-    const resultado = await userController.crearPropuesta(
+    const resultado = await truequeController.crearPropuesta(
       props.receptorId,
       publicacionEmisorId.value,
       publicacionReceptorId.value,
+      {
+        receptorId: props.receptorId,
+        modoPropuesta: props.modoPropuesta,
+        publicacionEmisor: publicacionEmisorSeleccionada.value,
+        publicacionReceptor: publicacionReceptorSeleccionada.value,
+      },
     )
     emit('creada', resultado)
     emit('update:visible', false)

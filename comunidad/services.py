@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
+from django.db.models import Q
 
 from .interfaces import (
     CarteleraInterface,
@@ -13,15 +14,14 @@ from .interfaces import (
     ResenaInterface,
     TruequeInterface,
 )
-from .repositories import (
-    AcuerdoTruequeRepository,
-    MatchmakingRepository,
-    NotificacionPropuestaRepository,
-    PublicacionRepository,
-    ResenaRepository,
-    SaldoComercialRepository,
-    UsuarioAutorizadoRepository,
-    UsuarioRepository,
+from .models import (
+    AcuerdoTrueque,
+    NotificacionPropuesta,
+    Publicacion,
+    Resena,
+    SaldoComercial,
+    Usuario,
+    UsuarioAutorizado,
 )
 from .validators import contiene_palabra_prohibida
 
@@ -45,9 +45,16 @@ class BusinessError(Exception):
         super().__init__(message)
 
 
+def _validar_usuario_no_comercio_trueques(usuario):
+    if usuario.es_comercio:
+        raise BusinessError(
+            "Los comercios no participan del mercado de trueques.",
+            status_code=403,
+        )
+
+
 class CargaUsuariosService(CargaUsuariosInterface):
-    def __init__(self, autorizados_repository=None):
-        self.autorizados_repository = autorizados_repository or UsuarioAutorizadoRepository()
+    def __init__(self):
         self.emails_procesados = []
 
     def cargar_desde_archivo(self, archivo):
@@ -82,7 +89,7 @@ class CargaUsuariosService(CargaUsuariosInterface):
             
             if seccion_actual and linea:
                 email = linea
-                _, creado = self.autorizados_repository.guardar_email(email, seccion_actual)
+                _, creado = UsuarioAutorizado.objects.guardar_email(email, seccion_actual)
                 self.emails_procesados.append(f"{email} ({seccion_actual.lower()})")
                 if creado:
                     creados += 1
@@ -108,7 +115,7 @@ class CargaUsuariosService(CargaUsuariosInterface):
                 if not email:
                     continue
 
-                _, creado = self.autorizados_repository.guardar_email(email, tipo)
+                _, creado = UsuarioAutorizado.objects.guardar_email(email, tipo)
                 self.emails_procesados.append(f"{email} ({tipo.lower()})")
                 if creado:
                     creados += 1
@@ -120,10 +127,6 @@ class CargaUsuariosService(CargaUsuariosInterface):
 
 
 class RegistroUsuarioService(RegistroUsuariosInterface):
-    def __init__(self, autorizados_repository=None, usuario_repository=None):
-        self.autorizados_repository = autorizados_repository or UsuarioAutorizadoRepository()
-        self.usuario_repository = usuario_repository or UsuarioRepository()
-
     def validar_email(self, datos):
         email = datos.get("email")
         es_comercio = bool(datos.get("es_comercio", False))
@@ -132,7 +135,7 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
         if not email:
             raise BusinessError("Faltan datos obligatorios.")
 
-        if not self.autorizados_repository.existe_email(email, tipo_autorizado):
+        if not UsuarioAutorizado.objects.existe_email(email, tipo_autorizado):
             mensaje = "Comercio no autorizado para esta comunidad." if es_comercio else "Usuario no autorizado para esta comunidad."
             raise BusinessError(mensaje, status_code=403)
 
@@ -150,15 +153,14 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
 
         self.validar_email({"email": email, "es_comercio": es_comercio})
 
-        if self.usuario_repository.existe_username(username):
+        if Usuario.objects.existe_username(username):
             raise BusinessError("El username ya esta en uso.")
 
-        return self.usuario_repository.crear_usuario(username, email, password, nombre_real, es_comercio)
+        return Usuario.objects.crear_usuario(username, email, password, nombre_real, es_comercio)
 
 
 class PublicacionService:
-    def __init__(self, publicacion_repository=None, matchmaking_service=None):
-        self.publicacion_repository = publicacion_repository or PublicacionRepository()
+    def __init__(self, matchmaking_service=None):
         self.matchmaking_service = matchmaking_service
 
     def _disparar_deteccion_matches(self, usuario):
@@ -166,6 +168,12 @@ class PublicacionService:
         servicio.detectar_y_notificar_matches(usuario)
 
     def crear_publicacion(self, usuario, datos):
+        if usuario.es_comercio:
+            raise BusinessError(
+                "Los comercios no pueden publicar talentos ni necesidades.",
+                status_code=403,
+            )
+
         tipo = datos.get("tipo")
         titulo = datos.get("titulo")
         descripcion = datos.get("descripcion")
@@ -190,7 +198,7 @@ class PublicacionService:
         if contiene_palabra_prohibida(titulo) or contiene_palabra_prohibida(descripcion):
             raise BusinessError("La publicación contiene palabras no permitidas.")
 
-        publicacion = self.publicacion_repository.crear(usuario, {
+        publicacion = Publicacion.objects.crear(usuario, {
             "tipo": tipo,
             "titulo": titulo,
             "descripcion": descripcion,
@@ -213,13 +221,13 @@ class PublicacionService:
             raise BusinessError("Saldo crítico inferior a -10 horas. No puedes modificar ofertas.")
 
         try:
-            publicacion = self.publicacion_repository.obtener_por_id_y_usuario(publicacion_id, usuario)
+            publicacion = Publicacion.objects.obtener_por_id_y_usuario(publicacion_id, usuario)
         except Publicacion.DoesNotExist:
             raise BusinessError("Publicación no encontrada.", status_code=404)
 
         # Solo validar limites cuando se re-activan publicaciones
         if esta_activa and not publicacion.esta_activa:
-            conteo_activas = self.publicacion_repository.contar_activas_por_tipo(usuario, publicacion.tipo)
+            conteo_activas = Publicacion.objects.contar_activas_por_tipo(usuario, publicacion.tipo)
             if publicacion.tipo == "TALENTO" and conteo_activas >= 5:
                 raise BusinessError("No puedes tener más de 5 talentos activos publicados simultáneamente.")
             if publicacion.tipo == "NECESIDAD" and conteo_activas >= 3:
@@ -233,18 +241,12 @@ class PublicacionService:
 
 
 class CarteleraService(CarteleraInterface):
-    def __init__(self, publicacion_repository=None):
-        self.publicacion_repository = publicacion_repository or PublicacionRepository()
-
     def obtener_publicaciones(self, categoria=None, urgencias=None):
-        return self.publicacion_repository.obtener_cartelera(categoria=categoria, urgencias=urgencias)
+        return Publicacion.objects.obtener_cartelera(categoria=categoria, urgencias=urgencias)
 
 
 class TruequeService(TruequeInterface):
-    def __init__(self, trueque_repository=None, usuario_repository=None, publicacion_repository=None, notificacion_service=None):
-        self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
-        self.usuario_repository = usuario_repository or UsuarioRepository()
-        self.publicacion_repository = publicacion_repository or PublicacionRepository()
+    def __init__(self, notificacion_service=None):
         self.notificacion_service = notificacion_service or NotificacionService()
 
     @staticmethod
@@ -332,13 +334,17 @@ class TruequeService(TruequeInterface):
 
     def crear_propuesta(self, emisor, receptor_id, publicacion_emisor_id=None, publicacion_receptor_id=None):
         """Crea una propuesta de trueque con referencias a las publicaciones específicas."""
+        _validar_usuario_no_comercio_trueques(emisor)
+
         if not receptor_id:
             raise BusinessError("Falta receptor_id.")
 
         try:
-            receptor = self.usuario_repository.obtener_por_id(receptor_id)
+            receptor = Usuario.objects.obtener_por_id(receptor_id)
         except ObjectDoesNotExist:
             raise BusinessError("Receptor no encontrado.", status_code=404)
+
+        _validar_usuario_no_comercio_trueques(receptor)
 
         if receptor.id == emisor.id:
             raise BusinessError("No puedes enviarte una propuesta a ti mismo.")
@@ -362,7 +368,7 @@ class TruequeService(TruequeInterface):
 
         self._validar_publicaciones_propuesta(emisor, receptor, pub_emisor, pub_receptor)
 
-        trueque = self.trueque_repository.obtener_o_crear_pendiente(
+        trueque = AcuerdoTrueque.objects.obtener_o_crear_pendiente(
             emisor=emisor,
             receptor=receptor,
             publicacion_emisor=pub_emisor,
@@ -383,20 +389,22 @@ class TruequeService(TruequeInterface):
         return trueque
 
     def responder_propuesta(self, receptor, trueque_id, accion):
+        _validar_usuario_no_comercio_trueques(receptor)
+
         try:
-            trueque = self.trueque_repository.obtener_por_receptor(trueque_id, receptor)
+            trueque = AcuerdoTrueque.objects.obtener_por_receptor(trueque_id, receptor)
         except ObjectDoesNotExist:
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
             trueque.estado = "ACEPTADO"
-            self.trueque_repository.guardar(trueque)
+            AcuerdoTrueque.objects.guardar(trueque)
             self.notificacion_service.actualizar_estado_propuesta(trueque, "ACEPTADA")
             return "Propuesta aceptada. Confirma la finalización cuando el servicio esté completo."
 
         if accion == "RECHAZAR":
             trueque.estado = "RECHAZADO"
-            self.trueque_repository.guardar(trueque)
+            AcuerdoTrueque.objects.guardar(trueque)
             self.notificacion_service.actualizar_estado_propuesta(trueque, "RECHAZADA")
             return "Propuesta rechazada."
 
@@ -404,9 +412,11 @@ class TruequeService(TruequeInterface):
 
     def finalizar_trueque(self, usuario, trueque_id):
         """Confirmación bilateral antes de transferir el saldo de horas."""
+        _validar_usuario_no_comercio_trueques(usuario)
+
         with transaction.atomic():
             try:
-                trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
+                trueque = AcuerdoTrueque.objects.obtener_bloqueado(trueque_id)
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
@@ -422,7 +432,7 @@ class TruequeService(TruequeInterface):
                 trueque.receptor_confirmado = True
 
             if not (trueque.emisor_confirmado and trueque.receptor_confirmado):
-                self.trueque_repository.guardar(trueque)
+                AcuerdoTrueque.objects.guardar(trueque)
                 return {
                     "saldo_transferido": False,
                     "impacto_horas": 0,
@@ -432,7 +442,7 @@ class TruequeService(TruequeInterface):
 
             if self._es_intercambio_mutuo(trueque):
                 trueque.estado = "FINALIZADO"
-                self.trueque_repository.guardar(trueque)
+                AcuerdoTrueque.objects.guardar(trueque)
                 return {
                     "saldo_transferido": False,
                     "impacto_horas": 0,
@@ -445,8 +455,8 @@ class TruequeService(TruequeInterface):
 
             prestador, receptor_servicio = self._identificar_roles_trueque(trueque)
 
-            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador.id)
-            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio.id)
+            prestador = Usuario.objects.obtener_por_id_bloqueado(prestador.id)
+            receptor_servicio = Usuario.objects.obtener_por_id_bloqueado(receptor_servicio.id)
 
             if receptor_servicio.horas_de_vida - 1.0 < -10.0:
                 raise BusinessError(
@@ -455,11 +465,11 @@ class TruequeService(TruequeInterface):
 
             prestador.horas_de_vida += 1.0
             receptor_servicio.horas_de_vida -= 1.0
-            self.usuario_repository.guardar(prestador)
-            self.usuario_repository.guardar(receptor_servicio)
+            Usuario.objects.guardar(prestador)
+            Usuario.objects.guardar(receptor_servicio)
 
             trueque.estado = "FINALIZADO"
-            self.trueque_repository.guardar(trueque)
+            AcuerdoTrueque.objects.guardar(trueque)
             return {
                 "saldo_transferido": True,
                 "impacto_horas": 1,
@@ -467,13 +477,14 @@ class TruequeService(TruequeInterface):
                 "mensaje": "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado.",
             }
 
+    def listar_por_usuario(self, usuario):
+        return AcuerdoTrueque.objects.listar_por_usuario(usuario)
+
+    def obtener_por_participante(self, trueque_id, usuario):
+        return AcuerdoTrueque.objects.obtener_por_participante(trueque_id, usuario)
+
 
 class ResenaService(ResenaInterface):
-    def __init__(self, trueque_repository=None, resena_repository=None, usuario_repository=None):
-        self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
-        self.resena_repository = resena_repository or ResenaRepository()
-        self.usuario_repository = usuario_repository or UsuarioRepository()
-
     def registrar_resena(self, usuario, datos):
         trueque_id = datos.get("trueque_id")
         comentario = datos.get("comentario", "")
@@ -491,7 +502,7 @@ class ResenaService(ResenaInterface):
 
         with transaction.atomic():
             try:
-                trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
+                trueque = AcuerdoTrueque.objects.obtener_bloqueado(trueque_id)
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
@@ -510,15 +521,13 @@ class ResenaService(ResenaInterface):
                 pass  # No hay reseña previa, podemos continuar
 
             calificado = trueque.receptor if usuario == trueque.emisor else trueque.emisor
-            self.resena_repository.crear(trueque, usuario, calificado, estrellas, comentario)
+            Resena.objects.crear(trueque, usuario, calificado, estrellas, comentario)
 
         return "Resena registrada correctamente."
 
 
 class ComercioService(ComercioInterface):
-    def __init__(self, usuario_repository=None, saldo_repository=None):
-        self.usuario_repository = usuario_repository or UsuarioRepository()
-        self.saldo_repository = saldo_repository or SaldoComercialRepository()
+    def __init__(self):
         self.movimientos = []
 
     def emitir_vuelto(self, comercio, datos):
@@ -526,54 +535,114 @@ class ComercioService(ComercioInterface):
             raise BusinessError("Solo comercios pueden emitir saldos comerciales.", status_code=403)
 
         cliente_id = datos.get("cliente_id")
-        monto = self._obtener_monto(datos.get("monto_excedente"))
-
         if not cliente_id:
             raise BusinessError("Faltan datos.")
 
+        monto, valor_producto, monto_recibido = self._resolver_excedente_emision(datos)
+
+        if int(cliente_id) == comercio.id:
+            raise BusinessError("Un comercio no puede emitir vuelto a si mismo.")
+
         with transaction.atomic():
+            comercio_bloqueado = Usuario.objects.obtener_por_id_bloqueado(comercio.id)
+            puede_emitir, mensaje = comercio_bloqueado.puede_emitir_vuelto_comercial(monto)
+            if not puede_emitir:
+                raise BusinessError(mensaje, status_code=403)
+
             try:
-                cliente = self.usuario_repository.obtener_por_id_bloqueado(cliente_id)
+                cliente = Usuario.objects.obtener_por_id_bloqueado(cliente_id)
             except ObjectDoesNotExist:
                 raise BusinessError("El cliente especificado no existe.", status_code=404)
 
+            if cliente.es_comercio:
+                raise BusinessError("No se puede emitir vuelto a otro comercio.")
+
             cliente.saldo_comercial += monto
-            self.usuario_repository.guardar(cliente)
-            movimiento = self.saldo_repository.crear_movimiento(comercio, cliente, monto, "EMISION")
+            comercio_bloqueado.saldo_comercial -= monto
+            Usuario.objects.guardar(cliente)
+            Usuario.objects.guardar(comercio_bloqueado)
+
+            movimiento = SaldoComercial.objects.crear_movimiento(
+                comercio_bloqueado,
+                cliente,
+                monto,
+                "EMISION",
+                valor_producto=valor_producto,
+                monto_recibido=monto_recibido,
+            )
             self.movimientos.append(movimiento)
 
-        return "Saldo a favor comercial emitido correctamente (Inalterable en horas de vida)."
+        return {
+            "mensaje": "Saldo a favor comercial emitido correctamente (Inalterable en horas de vida).",
+            "comprobante": movimiento,
+            "saldo_cliente": cliente.saldo_comercial,
+            "saldo_comercio": comercio_bloqueado.saldo_comercial,
+        }
 
     def pagar_con_saldo(self, cliente, datos):
         comercio_id = datos.get("comercio_id")
-        monto = self._obtener_monto(datos.get("monto"))
+        monto_valor = datos.get("monto")
 
-        if not comercio_id:
+        if not comercio_id or monto_valor in [None, ""]:
             raise BusinessError("Faltan datos.")
 
+        monto = self._obtener_monto(monto_valor)
+
+        if int(comercio_id) == cliente.id:
+            raise BusinessError("No puede pagar en su propio comercio.")
+
         with transaction.atomic():
-            cliente_bloqueado = self.usuario_repository.obtener_por_id_bloqueado(cliente.id)
+            cliente_bloqueado = Usuario.objects.obtener_por_id_bloqueado(cliente.id)
+
+            puede_pagar, mensaje = cliente_bloqueado.puede_pagar_con_saldo(monto)
+            if not puede_pagar:
+                raise BusinessError(mensaje)
 
             try:
-                comercio = self.usuario_repository.obtener_por_id(comercio_id)
+                comercio = Usuario.objects.obtener_por_id_bloqueado(comercio_id)
             except ObjectDoesNotExist:
                 raise BusinessError("Comercio no encontrado.", status_code=404)
 
-            if not comercio.es_comercio:
-                raise BusinessError("El usuario de destino no es un comercio.")
-
-            if cliente_bloqueado.saldo_comercial < monto:
-                raise BusinessError("Saldo comercial insuficiente para realizar el pago.")
+            if not comercio.es_comercio_activo():
+                raise BusinessError("El usuario de destino no es un comercio activo.")
 
             cliente_bloqueado.saldo_comercial -= monto
-            self.usuario_repository.guardar(cliente_bloqueado)
-            movimiento = self.saldo_repository.crear_movimiento(comercio, cliente_bloqueado, monto, "PAGO")
+            comercio.saldo_comercial += monto
+            Usuario.objects.guardar(cliente_bloqueado)
+            Usuario.objects.guardar(comercio)
+
+            movimiento = SaldoComercial.objects.crear_movimiento(
+                comercio, cliente_bloqueado, monto, "PAGO"
+            )
             self.movimientos.append(movimiento)
 
-        return "Pago procesado con exito utilizando saldo comercial."
+        return {
+            "mensaje": "Pago procesado con exito utilizando saldo comercial.",
+            "comprobante": movimiento,
+            "saldo_restante": cliente_bloqueado.saldo_comercial,
+            "saldo_comercio": comercio.saldo_comercial,
+        }
 
     def listar_comercios(self):
-        return self.usuario_repository.listar_comercios_activos()
+        comercios = Usuario.objects.listar_comercios_activos()
+        return [comercio for comercio in comercios if comercio.es_comercio_activo()]
+
+    def listar_clientes(self, termino_busqueda=None):
+        clientes = Usuario.objects.filter(
+            es_comercio=False,
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        ).order_by('nombre_real', 'username')
+
+        if termino_busqueda:
+            termino = str(termino_busqueda).strip()
+            if termino:
+                clientes = clientes.filter(
+                    Q(nombre_real__icontains=termino) | Q(username__icontains=termino)
+                )
+
+        return list(clientes)
 
     def _obtener_monto(self, valor):
         if valor in [None, ""]:
@@ -589,11 +658,54 @@ class ComercioService(ComercioInterface):
 
         return monto
 
+    def _obtener_monto_no_negativo(self, valor, etiqueta):
+        if valor in [None, ""]:
+            raise BusinessError("Faltan datos.")
+
+        try:
+            monto = Decimal(str(valor))
+        except (InvalidOperation, ValueError):
+            raise BusinessError(f"El {etiqueta} no es valido.")
+
+        if monto < Decimal("0"):
+            raise BusinessError(f"El {etiqueta} no puede ser negativo.")
+
+        return monto
+
+    def _resolver_excedente_emision(self, datos):
+        valor_producto = datos.get("valor_producto")
+        monto_recibido = datos.get("monto_recibido")
+        monto_excedente = datos.get("monto_excedente")
+
+        if valor_producto not in [None, ""] and monto_recibido not in [None, ""]:
+            valor = self._obtener_monto(valor_producto)
+            recibido = self._obtener_monto_no_negativo(monto_recibido, "monto recibido")
+
+            if recibido <= valor:
+                raise BusinessError(
+                    "El monto recibido debe ser mayor al valor del producto para emitir vuelto."
+                )
+
+            excedente = recibido - valor
+            if excedente <= Decimal("0"):
+                raise BusinessError("El excedente debe ser mayor a cero para emitir vuelto.")
+
+            if monto_excedente not in [None, ""]:
+                excedente_declarado = self._obtener_monto(monto_excedente)
+                if excedente_declarado != excedente:
+                    raise BusinessError(
+                        "El monto excedente no coincide con monto recibido menos valor del producto."
+                    )
+
+            return excedente, valor, recibido
+
+        if monto_excedente not in [None, ""]:
+            return self._obtener_monto(monto_excedente), None, None
+
+        raise BusinessError("Faltan datos.")
+
 
 class NotificacionService:
-    def __init__(self, notificacion_repository=None):
-        self.notificacion_repository = notificacion_repository or NotificacionPropuestaRepository()
-
     def crear_notificacion_propuesta(
         self,
         destinatario,
@@ -603,7 +715,7 @@ class NotificacionService:
         mensaje,
         tipo="PROPUESTA",
     ):
-        return self.notificacion_repository.crear_notificacion(
+        return NotificacionPropuesta.objects.crear_notificacion(
             destinatario,
             remitente,
             trueque,
@@ -613,17 +725,17 @@ class NotificacionService:
         )
 
     def actualizar_estado_propuesta(self, trueque, estado):
-        return self.notificacion_repository.actualizar_estado_por_trueque(trueque, estado)
+        return NotificacionPropuesta.objects.actualizar_estado_por_trueque(trueque, estado)
     
     def obtener_notificaciones_usuario(self, usuario, incluir_leidas=False):
-        return self.notificacion_repository.obtener_notificaciones_usuario(
+        return NotificacionPropuesta.objects.obtener_notificaciones_usuario(
             usuario,
             incluir_leidas=incluir_leidas,
         )
     
     def marcar_notificacion_leida(self, notificacion_id, usuario):
         try:
-            return self.notificacion_repository.marcar_como_leida(
+            return NotificacionPropuesta.objects.marcar_como_leida(
                 notificacion_id,
                 destinatario=usuario,
             )
@@ -631,7 +743,7 @@ class NotificacionService:
             raise BusinessError("Notificación no encontrada.", status_code=404)
 
     def marcar_notificaciones_trueque_leidas(self, usuario, trueque_id):
-        actualizadas = self.notificacion_repository.marcar_leidas_por_trueque(
+        actualizadas = NotificacionPropuesta.objects.marcar_leidas_por_trueque(
             usuario,
             trueque_id,
         )
@@ -639,53 +751,184 @@ class NotificacionService:
 
 
 class MatchmakingService(MatchmakingInterface):
-    def __init__(
-        self,
-        publicacion_repository=None,
-        matchmaking_repository=None,
-        notificacion_repository=None,
-        trueque_repository=None,
-    ):
-        self.publicacion_repository = publicacion_repository or PublicacionRepository()
-        self.matchmaking_repository = matchmaking_repository or MatchmakingRepository()
-        self.notificacion_repository = notificacion_repository or NotificacionPropuestaRepository()
-        self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
+    def __init__(self):
         self.matches = []
 
+    @staticmethod
+    def _construir_match_enriquecido(usuario, candidato, titulos_necesidades, titulos_talentos):
+        mis_talentos = list(
+            Publicacion.objects.filter(
+                usuario=usuario,
+                tipo="TALENTO",
+                esta_activa=True,
+                titulo__in=titulos_talentos,
+            ),
+        )
+        mis_necesidades = list(
+            Publicacion.objects.filter(
+                usuario=usuario,
+                tipo="NECESIDAD",
+                esta_activa=True,
+                titulo__in=titulos_necesidades,
+            ),
+        )
+        talentos_coincidentes = list(
+            Publicacion.objects.filter(
+                usuario=candidato,
+                tipo="TALENTO",
+                esta_activa=True,
+                titulo__in=titulos_necesidades,
+            ),
+        )
+        necesidades_coincidentes = list(
+            Publicacion.objects.filter(
+                usuario=candidato,
+                tipo="NECESIDAD",
+                esta_activa=True,
+                titulo__in=titulos_talentos,
+            ),
+        )
+
+        publicaciones_sugeridas = []
+        for mi_nec in mis_necesidades:
+            for su_tal in talentos_coincidentes:
+                if mi_nec.titulo == su_tal.titulo:
+                    publicaciones_sugeridas.append(
+                        {"mi_pub_id": mi_nec.id, "su_pub_id": su_tal.id},
+                    )
+        for mi_tal in mis_talentos:
+            for su_nec in necesidades_coincidentes:
+                if mi_tal.titulo == su_nec.titulo:
+                    publicaciones_sugeridas.append(
+                        {"mi_pub_id": mi_tal.id, "su_pub_id": su_nec.id},
+                    )
+
+        return {
+            "usuario": candidato,
+            "talentos_coincidentes": talentos_coincidentes,
+            "necesidades_coincidentes": necesidades_coincidentes,
+            "publicaciones_sugeridas": publicaciones_sugeridas,
+        }
+
+    def buscar_matches(self, usuario, titulos_necesidades, titulos_talentos):
+        candidatos = Usuario.objects.buscar_candidatos_match(
+            usuario,
+            titulos_necesidades,
+            titulos_talentos,
+        )
+        return [
+            self._construir_match_enriquecido(
+                usuario,
+                candidato,
+                titulos_necesidades,
+                titulos_talentos,
+            )
+            for candidato in candidatos
+        ]
+
+    def buscar_matches_por_publicacion(self, usuario, publicacion):
+        if not publicacion or not publicacion.titulo:
+            return []
+
+        tipo_buscado = "NECESIDAD" if publicacion.tipo == "TALENTO" else "TALENTO"
+        tipo_propio = "TALENTO" if publicacion.tipo == "NECESIDAD" else "NECESIDAD"
+        candidatos = Usuario.objects.buscar_candidatos_por_publicacion(usuario, publicacion)
+        resultados = []
+
+        for candidato in candidatos:
+            pubs_complementarias = list(
+                Publicacion.objects.filter(
+                    usuario=candidato,
+                    tipo=tipo_buscado,
+                    titulo=publicacion.titulo,
+                    esta_activa=True,
+                ),
+            )
+            mis_complementarias = list(
+                Publicacion.objects.filter(
+                    usuario=usuario,
+                    tipo=tipo_propio,
+                    esta_activa=True,
+                ),
+            )
+            titulos_mis_complementarias = {pub.titulo for pub in mis_complementarias}
+            talentos_coincidentes = []
+            necesidades_coincidentes = []
+
+            if tipo_buscado == "TALENTO":
+                talentos_coincidentes = pubs_complementarias
+                necesidades_coincidentes = list(
+                    Publicacion.objects.filter(
+                        usuario=candidato,
+                        tipo="NECESIDAD",
+                        titulo__in=titulos_mis_complementarias,
+                        esta_activa=True,
+                    ),
+                )
+            else:
+                necesidades_coincidentes = pubs_complementarias
+                talentos_coincidentes = list(
+                    Publicacion.objects.filter(
+                        usuario=candidato,
+                        tipo="TALENTO",
+                        titulo__in=titulos_mis_complementarias,
+                        esta_activa=True,
+                    ),
+                )
+
+            if not talentos_coincidentes or not necesidades_coincidentes:
+                continue
+
+            titulos_necesidades = (
+                [publicacion.titulo]
+                if publicacion.tipo == "NECESIDAD"
+                else [pub.titulo for pub in necesidades_coincidentes]
+            )
+            titulos_talentos = (
+                [publicacion.titulo]
+                if publicacion.tipo == "TALENTO"
+                else [pub.titulo for pub in talentos_coincidentes]
+            )
+            resultados.append(
+                self._construir_match_enriquecido(
+                    usuario,
+                    candidato,
+                    titulos_necesidades,
+                    titulos_talentos,
+                ),
+            )
+
+        return resultados
+
     def obtener_matches(self, usuario):
-        titulos_necesidades = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
-            usuario, "NECESIDAD"
+        titulos_necesidades = Publicacion.objects.titulos_activos_por_usuario_y_tipo(
+            usuario,
+            "NECESIDAD",
         )
-        titulos_talentos = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
-            usuario, "TALENTO"
+        titulos_talentos = Publicacion.objects.titulos_activos_por_usuario_y_tipo(
+            usuario,
+            "TALENTO",
         )
-        self.matches = self.matchmaking_repository.buscar_matches(
-            usuario, titulos_necesidades, titulos_talentos
-        )
+        self.matches = self.buscar_matches(usuario, titulos_necesidades, titulos_talentos)
         return self.matches
 
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
-        """Verifica si el usuario tiene publicaciones con el mismo título que la publicación seleccionada."""
         try:
-            from .models import Publicacion
             publicacion = Publicacion.objects.get(id=publicacion_id, esta_activa=True)
-            resultado = self.matchmaking_repository.verificar_coincidencia_por_titulo(usuario, publicacion)
-            return resultado
+            return Publicacion.objects.verificar_coincidencia_por_titulo(usuario, publicacion)
         except Publicacion.DoesNotExist:
             return {
                 "tiene_coincidencia": False,
                 "publicaciones_coincidentes": [],
                 "tipo_buscado": None,
                 "titulo": None,
-                "error": "Publicación no encontrada"
+                "error": "Publicación no encontrada",
             }
-    
+
     def obtener_matches_por_publicacion(self, usuario, publicacion_id):
-        """Obtiene matches basados en una publicación específica."""
         try:
-            from .models import Publicacion
             publicacion = Publicacion.objects.get(id=publicacion_id, esta_activa=True)
-            self.matches = self.matchmaking_repository.buscar_matches_por_publicacion(usuario, publicacion)
+            self.matches = self.buscar_matches_por_publicacion(usuario, publicacion)
             return self.matches
         except Publicacion.DoesNotExist:
             return []
@@ -827,12 +1070,15 @@ class MatchmakingService(MatchmakingInterface):
         return None, None
 
     def detectar_y_notificar_matches(self, usuario):
+        if usuario.es_comercio:
+            return []
+
         matches = self.obtener_matches(usuario)
         notificaciones_creadas = []
 
         for match in matches:
             otro_usuario = match["usuario"]
-            if self.notificacion_repository.existe_match_entre(usuario, otro_usuario):
+            if NotificacionPropuesta.objects.existe_match_entre(usuario, otro_usuario):
                 continue
 
             pub_emisor, pub_receptor = self._resolver_publicaciones_match_completo(match, usuario)
@@ -845,7 +1091,7 @@ class MatchmakingService(MatchmakingInterface):
                     pub_emisor = Publicacion.objects.filter(id=sugerencia.get("mi_pub_id")).first()
                     pub_receptor = Publicacion.objects.filter(id=sugerencia.get("su_pub_id")).first()
 
-            trueque = self.trueque_repository.obtener_o_crear_pendiente(
+            trueque = AcuerdoTrueque.objects.obtener_o_crear_pendiente(
                 emisor=usuario,
                 receptor=otro_usuario,
                 publicacion_emisor=pub_emisor,
@@ -866,7 +1112,7 @@ class MatchmakingService(MatchmakingInterface):
                 match,
             )
             notificaciones_creadas.append(
-                self.notificacion_repository.crear_notificacion(
+                NotificacionPropuesta.objects.crear_notificacion(
                     destinatario=usuario,
                     remitente=otro_usuario,
                     trueque=trueque,
@@ -885,7 +1131,7 @@ class MatchmakingService(MatchmakingInterface):
                 match,
             )
             notificaciones_creadas.append(
-                self.notificacion_repository.crear_notificacion(
+                NotificacionPropuesta.objects.crear_notificacion(
                     destinatario=otro_usuario,
                     remitente=usuario,
                     trueque=trueque,
@@ -897,3 +1143,63 @@ class MatchmakingService(MatchmakingInterface):
             )
 
         return notificaciones_creadas
+
+
+class PerfilService:
+    def obtener_perfil_publico(self, usuario_id):
+        usuario = Usuario.objects.obtener_por_id(usuario_id)
+        publicaciones_activas = Publicacion.objects.listar_por_usuario(usuario, solo_activas=True)
+        resenas_recibidas = Resena.objects.listar_por_calificado(usuario)
+        return usuario, publicaciones_activas, resenas_recibidas
+
+    def obtener_mi_perfil(self, usuario):
+        publicaciones = Publicacion.objects.listar_por_usuario(usuario)
+        publicaciones_activas = [publicacion for publicacion in publicaciones if publicacion.esta_activa]
+        publicaciones_pausadas = [publicacion for publicacion in publicaciones if not publicacion.esta_activa]
+        resenas_recibidas = Resena.objects.listar_por_calificado(usuario)
+        trueques_enviados = AcuerdoTrueque.objects.filter(emisor=usuario)
+        trueques_recibidos = AcuerdoTrueque.objects.filter(receptor=usuario)
+        return {
+            "publicaciones": publicaciones,
+            "publicaciones_activas": publicaciones_activas,
+            "publicaciones_pausadas": publicaciones_pausadas,
+            "resenas_recibidas": resenas_recibidas,
+            "trueques_enviados_count": trueques_enviados.count(),
+            "trueques_recibidos_count": trueques_recibidos.count(),
+        }
+
+    def listar_mis_publicaciones(self, usuario):
+        return Publicacion.objects.listar_por_usuario(usuario)
+
+
+class ComunidadService:
+    @staticmethod
+    def es_miembro_activo(usuario):
+        nombre = (usuario.nombre_real or "").strip()
+        return bool(nombre and Publicacion.objects.filter(usuario=usuario).exists())
+
+    def obtener_directorio(self):
+        miembros = Usuario.objects.filter(
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        ).order_by("nombre_real", "username")
+
+        directorio = []
+        for miembro in miembros:
+            publicaciones = Publicacion.objects.listar_por_usuario(miembro)
+            talentos_activos = [
+                publicacion for publicacion in publicaciones
+                if publicacion.tipo == "TALENTO" and publicacion.esta_activa
+            ]
+            directorio.append({
+                "id": miembro.id,
+                "nombre_real": miembro.nombre_real,
+                "username": miembro.username,
+                "promedio_estrellas": miembro.promedio_estrellas,
+                "talentos_principales": [publicacion.titulo for publicacion in talentos_activos[:3]],
+                "cantidad_talentos": len(talentos_activos),
+                "es_miembro_activo": self.es_miembro_activo(miembro),
+            })
+
+        return directorio

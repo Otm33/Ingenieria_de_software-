@@ -5,7 +5,6 @@ from django.db.models import Q
 from django.test import TestCase, override_settings
 
 from comunidad.models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, Usuario
-from comunidad.repositories import MatchmakingRepository
 from comunidad.serializers import NotificacionSerializer
 from comunidad.services import BusinessError, MatchmakingService, ResenaService, TruequeService
 from comunidad.tests.helpers import (
@@ -112,10 +111,7 @@ class ServiciosHU4Tests(HU4TestCase):
     """Fase 2: repositorios y servicios del backend core."""
 
     def setUp(self):
-        self.matchmaking_repo = MatchmakingRepository()
-        self.matchmaking_service = MatchmakingService(
-            matchmaking_repository=self.matchmaking_repo
-        )
+        self.matchmaking_service = MatchmakingService()
         self.trueque_service = TruequeService()
 
     def _crear_par_complementario(self):
@@ -137,7 +133,7 @@ class ServiciosHU4Tests(HU4TestCase):
 
     def test_match_por_titulo_complementario(self):
         user_a, user_b = self._crear_par_complementario()
-        matches = self.matchmaking_repo.buscar_matches(
+        matches = self.matchmaking_service.buscar_matches(
             user_a,
             [TITULO_FONTANERIA_GENERAL],
             [TITULO_INSTALACION_ELECTRICA],
@@ -152,7 +148,7 @@ class ServiciosHU4Tests(HU4TestCase):
             user_c, "TALENTO", TITULO_FONTANERIA_GENERAL, CATEGORIA_MANTENIMIENTO
         )
 
-        matches = self.matchmaking_repo.buscar_matches(
+        matches = self.matchmaking_service.buscar_matches(
             user_a,
             [TITULO_FONTANERIA_GENERAL],
             [TITULO_INSTALACION_ELECTRICA],
@@ -170,9 +166,7 @@ class ServiciosHU4Tests(HU4TestCase):
         ).first()
         self.assertIsNotNone(notif)
 
-        from comunidad.repositories import NotificacionPropuestaRepository
-
-        NotificacionPropuestaRepository().marcar_como_leida(notif.id, destinatario=user_a)
+        NotificacionPropuesta.objects.marcar_como_leida(notif.id, destinatario=user_a)
 
         count_antes = NotificacionPropuesta.objects.filter(tipo="MATCH").count()
         self.matchmaking_service.detectar_y_notificar_matches(user_a)

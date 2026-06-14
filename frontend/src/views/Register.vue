@@ -2,10 +2,13 @@
   <section class="page register-page">
     <div class="page-header">
       <div>
-        <p class="eyebrow">Nuevo integrante</p>
+        <p class="eyebrow">{{ esComercio ? 'Nuevo comercio afiliado' : 'Nuevo integrante' }}</p>
         <h2 class="page-title">{{ esComercio ? 'Registro de comercio' : 'Registro de usuario' }}</h2>
         <p class="page-description">
-          Completa los 3 pasos para unirte a la comunidad. El correo debe estar autorizado previamente en la columna correcta del CSV.
+          {{ esComercio
+            ? 'Completa los 3 pasos para afiliar tu comercio. El correo debe estar autorizado en la columna Comercios del CSV y te habilitara la Red Comercial.'
+            : 'Completa los 3 pasos para unirte a la comunidad. El correo debe estar autorizado en la columna Usuarios del CSV y publicaras tu primer talento.'
+          }}
         </p>
       </div>
     </div>
@@ -86,18 +89,18 @@
           </div>
         </div>
 
-        <!-- Paso 3: Perfil inicial y primer talento -->
-        <template v-else>
+        <!-- Paso 3: Perfil vecino (talento) -->
+        <template v-else-if="!esComercio">
           <div class="form-grid">
             <div class="form-group form-group--full">
-              <label for="nombre_real">{{ esComercio ? 'Nombre del comercio' : 'Nombre real' }}</label>
+              <label for="nombre_real">Nombre real</label>
               <input
                 id="nombre_real"
                 v-model="form.nombre_real"
                 class="input"
                 type="text"
                 required
-                :placeholder="esComercio ? 'Ej. Panaderia Central' : 'Ej. Juan Perez'"
+                placeholder="Ej. Juan Perez"
               />
             </div>
 
@@ -133,6 +136,28 @@
               placeholder="Describe que ofreces"
             ></textarea>
           </div>
+        </template>
+
+        <!-- Paso 3: Perfil comercial -->
+        <template v-else>
+          <div class="form-grid">
+            <div class="form-group form-group--full">
+              <label for="nombre_comercio">Nombre del comercio</label>
+              <input
+                id="nombre_comercio"
+                v-model="form.nombre_real"
+                class="input"
+                type="text"
+                required
+                minlength="2"
+                placeholder="Ej. Panaderia Central"
+              />
+            </div>
+          </div>
+
+          <p class="register-info">
+            Al completar el registro podrás emitir vuelto comercial y aparecerás en el catálogo de la red.
+          </p>
         </template>
 
         <div class="form-actions">
@@ -182,8 +207,13 @@ const props = defineProps({
 
 const emit = defineEmits(['registered']);
 
-const userController = inject('userController');
-const pasos = ['Correo', 'Credenciales', 'Perfil y talento'];
+const authController = inject('authController');
+const carteleraController = inject('carteleraController');
+const pasos = computed(() => (
+  props.esComercio
+    ? ['Correo', 'Credenciales', 'Perfil comercial']
+    : ['Correo', 'Credenciales', 'Perfil y talento']
+));
 const pasoActual = ref(1);
 const form = ref({
   email: '',
@@ -204,7 +234,7 @@ const titulosDisponibles = computed(() => titulosParaCategoria(form.value.catego
 const tituloPaso = computed(() => {
   if (pasoActual.value === 1) return 'Paso 1 — Validar correo';
   if (pasoActual.value === 2) return 'Paso 2 — Credenciales';
-  return props.esComercio ? 'Paso 3 — Perfil del comercio y primer servicio' : 'Paso 3 — Perfil inicial y primer talento';
+  return props.esComercio ? 'Paso 3 — Perfil comercial' : 'Paso 3 — Perfil inicial y primer talento';
 });
 
 const textoBotonPrincipal = computed(() => {
@@ -242,25 +272,13 @@ const retrocederPaso = () => {
   }
 };
 
-const validarPaso2 = () => {
-  if (form.value.password !== form.value.password_confirm) {
-    feedback.value = 'Las contrasenas no coinciden.';
-    return false;
-  }
-  if (form.value.password.length < 8) {
-    feedback.value = 'La contrasena debe tener al menos 8 caracteres.';
-    return false;
-  }
-  return true;
-};
-
 const validarEmailPaso1 = async () => {
   enviando.value = true;
   feedback.value = '';
   registroExitoso.value = false;
 
   try {
-    await userController.validarEmail(form.value.email, props.esComercio);
+    await authController.validarEmail(form.value.email, props.esComercio);
     pasoActual.value = 2;
   } catch (err) {
     feedback.value = err.message || 'El correo no esta autorizado para esta comunidad.';
@@ -275,36 +293,18 @@ const ejecutarRegistroCompleto = async () => {
   registroExitoso.value = false;
 
   try {
-    await userController.registrarUsuario({
-      nombre_real: form.value.nombre_real,
-      email: form.value.email,
-      username: form.value.username,
-      password: form.value.password,
-      es_comercio: props.esComercio,
-    });
-
-    await userController.iniciarSesion({
-      username: form.value.username,
-      password: form.value.password,
-    });
-
-    await userController.crearPublicacion({
-      tipo: 'TALENTO',
-      titulo: form.value.titulo,
-      descripcion: form.value.descripcion,
-      categoria: form.value.categoria,
-      urgencia: 'NORMAL',
-    });
+    await authController.completarRegistroNuevoMiembro(form.value, props.esComercio, carteleraController);
 
     registroExitoso.value = true;
     feedback.value = props.esComercio
-      ? 'Comercio registrado correctamente. ¡Bienvenido, Miembro Activo!'
+      ? 'Comercio registrado correctamente. Ya puedes emitir vuelto en la Red Comercial.'
       : '¡Bienvenido, Miembro Activo! Registro completado.';
 
     emit('registered', {
       username: form.value.username,
       password: form.value.password,
       esNuevoMiembro: true,
+      esComercio: props.esComercio,
     });
   } catch (err) {
     feedback.value = err.message || 'No se pudo completar el registro.';
@@ -322,11 +322,30 @@ const avanzarPaso = async () => {
   }
 
   if (pasoActual.value === 2) {
-    if (!validarPaso2()) return;
-    pasoActual.value = 3;
+    enviando.value = true;
+    try {
+      await authController.validarPasoCredenciales(form.value);
+      pasoActual.value = 3;
+    } catch (err) {
+      feedback.value = err.message || 'Revisa las credenciales ingresadas.';
+    } finally {
+      enviando.value = false;
+    }
     return;
   }
 
   await ejecutarRegistroCompleto();
 };
 </script>
+
+<style scoped>
+.register-info {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: var(--primary-dark);
+  background: #e8f2f8;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+</style>

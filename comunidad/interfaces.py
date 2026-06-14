@@ -52,6 +52,10 @@ class ComercioInterface(ABC):
     def listar_comercios(self):
         pass
 
+    @abstractmethod
+    def listar_clientes(self, termino_busqueda=None):
+        pass
+
 
 class MatchmakingInterface(ABC):
     @abstractmethod

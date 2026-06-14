@@ -115,7 +115,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'realizar-trueque', 'actualizado'])
 
-const userController = inject('userController')
+const truequeController = inject('truequeController')
 const procesandoId = ref(null)
 const errorPorId = reactive({})
 
@@ -152,7 +152,7 @@ const descartar = async (notif) => {
   procesandoId.value = notif.id
   errorPorId[notif.id] = ''
   try {
-    await userController.marcarNotificacionLeida(notif.id)
+    await truequeController.marcarNotificacionLeida(notif.id)
     emit('actualizado')
   } catch (error) {
     errorPorId[notif.id] = error.message || 'No se pudo descartar la notificación.'
@@ -170,8 +170,8 @@ const responder = async (notif, accion) => {
   procesandoId.value = notif.id
   errorPorId[notif.id] = ''
   try {
-    await userController.responderPropuesta(notif.trueque_id, accion)
-    await userController.marcarNotificacionLeida(notif.id)
+    await truequeController.responderPropuesta(notif.trueque_id, accion)
+    await truequeController.marcarNotificacionLeida(notif.id)
     emit('actualizado')
   } catch (error) {
     errorPorId[notif.id] = error.message || 'No se pudo responder la propuesta.'

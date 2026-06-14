@@ -24,6 +24,12 @@ class UsuarioSerializer(serializers.ModelSerializer):
         return obj.promedio_estrellas
 
 
+class ClienteBasicoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
+        fields = ["id", "nombre_real", "username"]
+
+
 class PublicacionSerializer(serializers.ModelSerializer):
     usuario_nombre_real = serializers.CharField(source="usuario.nombre_real", read_only=True)
     usuario_estrellas = serializers.SerializerMethodField()
@@ -246,6 +252,9 @@ class SaldoComercialSerializer(serializers.ModelSerializer):
             "cliente_nombre",
             "cliente_email",
             "monto_excedente",
+            "valor_producto",
+            "monto_recibido",
             "tipo_movimiento",
             "fecha",
+            "fecha_expiracion",
         ]

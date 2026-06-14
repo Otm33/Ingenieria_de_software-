@@ -1,28 +1,13 @@
-import User from './User.js'
-import Publicacion from './Publicacion.js'
+import ApiClient from '../repositories/ApiClient.js'
 
 export default class UserService {
-  // CAMBIO MODELO/SERVICIO: esta clase concentra la comunicacion frontend -> API -> BD.
   constructor(baseURL = '/api/') {
-    this.baseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`
-    this._usuarios = []
-    this._publicaciones = []
+    this.apiClient = new ApiClient(baseURL)
+    this.baseURL = this.apiClient.baseURL
   }
 
-  // CAMBIO MODELO/SERVICIO: metodo base reutilizable para no repetir fetch en las vistas.
   async _request(endpoint, options = {}) {
-    const response = await fetch(`${this.baseURL}${endpoint}`, {
-      credentials: 'include',
-      ...options,
-    })
-    const contentType = response.headers.get('content-type') || ''
-    const data = contentType.includes('application/json') ? await response.json() : null
-
-    if (!response.ok) {
-      throw new Error(data?.error || data?.detail || 'No se pudo completar la solicitud.')
-    }
-
-    return data
+    return this.apiClient.request(endpoint, options)
   }
 
   async validarEmail(email, esComercio = false) {
@@ -36,44 +21,30 @@ export default class UserService {
     })
   }
 
-  // CAMBIO MODELO/SERVICIO: registra usuarios reales en la BD mediante /api/registro/.
-  async registrarUsuario(formulario) {
-    const data = await this._request('registro/', {
+  async registrarUsuario(payloadRegistro) {
+    return await this._request('registro/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(User.paraRegistro(formulario)),
+      body: JSON.stringify(payloadRegistro),
     })
-
-    const usuario = new User(data)
-    this._usuarios.push(usuario)
-    return usuario
   }
 
-  // CAMBIO AUTH: consulta si Django ya tiene una sesion abierta.
   async obtenerSesionActual() {
-    const data = await this._request('sesion/')
-    return data.autenticado ? new User(data.usuario) : null
+    return await this._request('sesion/')
   }
 
-  // CAMBIO AUTH: inicia sesion en Django y devuelve el usuario autenticado.
   async iniciarSesion(credenciales) {
-    const data = await this._request('login/', {
+    return await this._request('login/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credenciales),
     })
-
-    return new User(data.usuario)
   }
 
-  // CAMBIO AUTH: cierra la sesion Django.
   async cerrarSesion() {
     await this._request('logout/', { method: 'POST' })
-    this._usuarios = []
-    this._publicaciones = []
   }
 
-  // CAMBIO MODELO/SERVICIO: envia el CSV al backend, que lo persiste con UsuarioAutorizado.
   async cargarUsuariosAutorizados(archivo) {
     const formData = new FormData()
     formData.append('archivo_csv', archivo)
@@ -84,7 +55,6 @@ export default class UserService {
     })
   }
 
-  // CAMBIO MODELO/SERVICIO: consulta la cartelera real guardada en la BD.
   async obtenerCartelera(filtros = {}) {
     const params = new URLSearchParams()
     if (filtros.categoria) params.append('categoria', filtros.categoria)
@@ -93,26 +63,19 @@ export default class UserService {
     }
 
     const endpoint = params.toString() ? `cartelera/?${params.toString()}` : 'cartelera/'
-    const data = await this._request(endpoint)
-    this._publicaciones = data.map((publicacion) => new Publicacion(publicacion))
-    return this._publicaciones
+    return await this._request(endpoint)
   }
 
   async crearPublicacion(formulario) {
-    const data = await this._request('publicaciones/', {
+    return await this._request('publicaciones/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formulario),
     })
-
-    const publicacion = new Publicacion(data)
-    this._publicaciones.unshift(publicacion)
-    return publicacion
   }
 
   async obtenerMiPerfil() {
-    const data = await this._request('mi-perfil/')
-    return data
+    return await this._request('mi-perfil/')
   }
 
   async obtenerComunidad() {
@@ -129,13 +92,11 @@ export default class UserService {
   }
 
   async actualizarEstadoPublicacion(id, estaActiva) {
-    const data = await this._request(`publicaciones/${id}/`, {
+    return await this._request(`publicaciones/${id}/`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esta_activa: Boolean(estaActiva) }),
     })
-
-    return new Publicacion(data)
   }
 
   async verificarCoincidenciaPorTitulo(publicacionId) {
@@ -144,13 +105,7 @@ export default class UserService {
     params.set('accion', 'verificar_coincidencia')
 
     const endpoint = `matchmaking/?${params.toString()}`
-    const data = await this._request(endpoint)
-    return data
-  }
-
-  async obtenerMatches(publicacionId = null) {
-    const { matches } = await this.obtenerMatchesEnriquecidos(publicacionId)
-    return matches.map((match) => match.usuario)
+    return await this._request(endpoint)
   }
 
   async obtenerMatchesEnriquecidos(publicacionId = null) {
@@ -160,24 +115,7 @@ export default class UserService {
     }
 
     const endpoint = params.toString() ? `matchmaking/?${params.toString()}` : 'matchmaking/'
-    const data = await this._request(endpoint)
-
-    const matches = (data.matches || []).map((match) => ({
-      usuario: new User(match.usuario),
-      talentosCoincidentes: (match.talentos_coincidentes || []).map(
-        (publicacion) => new Publicacion(publicacion),
-      ),
-      necesidadesCoincidentes: (match.necesidades_coincidentes || []).map(
-        (publicacion) => new Publicacion(publicacion),
-      ),
-      publicacionesSugeridas: match.publicaciones_sugeridas || [],
-    }))
-
-    return {
-      matches,
-      mensaje: data.mensaje || '',
-      cantidad: data.cantidad ?? matches.length,
-    }
+    return await this._request(endpoint)
   }
 
   async crearPropuesta(receptorId, publicacionEmisorId, publicacionReceptorId) {
@@ -218,40 +156,9 @@ export default class UserService {
     })
   }
 
-  _normalizarMatchDetalle(matchDetalle) {
-    if (!Array.isArray(matchDetalle) || !matchDetalle.length) {
-      return null
-    }
-
-    return matchDetalle.map((entrada) => ({
-      rol: entrada.rol || '',
-      mi_titulo: entrada.mi_titulo || '',
-      mi_tipo: entrada.mi_tipo || '',
-      su_titulo: entrada.su_titulo || '',
-      su_tipo: entrada.su_tipo || '',
-    }))
-  }
-
-  _mapNotificacion(notificacion) {
-    const matchDetalle = this._normalizarMatchDetalle(notificacion.match_detalle)
-
-    return {
-      ...notificacion,
-      match_detalle: matchDetalle,
-    }
-  }
-
   async obtenerNotificaciones(incluirLeidas = false) {
     const query = incluirLeidas ? '?incluir_leidas=true' : ''
-    const data = await this._request(`notificaciones/${query}`)
-    const notificaciones = (data.notificaciones || []).map((notificacion) => (
-      this._mapNotificacion(notificacion)
-    ))
-
-    return {
-      notificaciones,
-      cantidad: data.cantidad ?? notificaciones.length,
-    }
+    return await this._request(`notificaciones/${query}`)
   }
 
   async marcarNotificacionLeida(notificacionId) {
@@ -271,18 +178,6 @@ export default class UserService {
   }
 
   async obtenerMisTrueques() {
-    const data = await this._request('mis-trueques/')
-    return {
-      trueques: data.trueques || [],
-      cantidad: data.cantidad ?? (data.trueques || []).length,
-    }
-  }
-
-  get users() {
-    return this._usuarios
-  }
-
-  get publicaciones() {
-    return this._publicaciones
+    return await this._request('mis-trueques/')
   }
 }
