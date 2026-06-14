@@ -12,22 +12,27 @@ class MatchmakingMultipleService:
     def detectar_y_notificar_ciclos(self, usuario):
         """Detecta ciclos múltiples al crear/modificar publicaciones y crea propuestas."""
         try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Iniciando detección y notificación de ciclos para usuario {usuario.id}")
+            
             ciclos = self.trueque_multiple_service.detectar_ciclo_multiple(usuario)
-            logger.debug("Detectados %d ciclos para usuario %s", len(ciclos), usuario.id)
+            logger.info(f"Detectados {len(ciclos)} ciclos para usuario {usuario.id}")
             propuestas_creadas = []
             
             for ciclo in ciclos:
                 try:
                     propuesta = self.trueque_multiple_service.crear_propuesta_multiple(ciclo, usuario_origen=usuario)
                     propuestas_creadas.append(propuesta)
-                    logger.info("Propuesta multiple creada para ciclo %s", ciclo.get('key'))
+                    logger.info(f"Propuesta multiple creada para ciclo {ciclo.get('key')}")
                 except BusinessError:
                     # Si falla la creación (ej. usuario ya tiene trueque activo), continuar con el siguiente
-                    logger.debug("Creacion de propuesta falló para ciclo %s", ciclo.get('key'))
+                    logger.warning(f"Creacion de propuesta falló para ciclo {ciclo.get('key')}")
                     continue
             
+            logger.info(f"Propuestas múltiples creadas: {len(propuestas_creadas)}")
             return propuestas_creadas
         except Exception as e:
             # No fallar si hay error en la detección
-            logger.exception("Error detectando ciclos múltiples para usuario %s", getattr(usuario, 'id', usuario))
+            logger.exception(f"Error detectando ciclos múltiples para usuario {getattr(usuario, 'id', usuario)}")
             return []

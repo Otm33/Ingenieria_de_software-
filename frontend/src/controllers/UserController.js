@@ -120,6 +120,18 @@ export default class UserController {
     return await this.service.obtenerMisTrueques()
   }
 
+  async obtenerMisTruequesMultiples() {
+    return await this.service.obtenerMisTruequesMultiples()
+  }
+
+  async validarCodigoParMultiple(truequeMultipleId, par, codigo) {
+    return await this.service.validarCodigoParMultiple(truequeMultipleId, par, codigo)
+  }
+
+  async registrarResenaMultiple(truequeMultipleId, calificadoId, estrellas, comentario) {
+    return await this.service.registrarResenaMultiple(truequeMultipleId, calificadoId, estrellas, comentario)
+  }
+
   get users() {
     return this.service.users
   }

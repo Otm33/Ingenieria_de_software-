@@ -55,7 +55,7 @@ export default class AdminController extends BaseController {
       }
 
       const usuario = authController.getUsuarioActual()
-      if (!usuario?.esAdmin) {
+      if (!usuario?.esSuperusuario) {
         throw new Error('No tienes permisos de administrador.')
       }
 

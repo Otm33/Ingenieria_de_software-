@@ -60,7 +60,7 @@ export default class ResenaRepository {
    * Marca una notificación como leída
    */
   async marcarNotificacionLeida(notificacionId) {
-    const result = await this.apiClient.post('notificaciones/', {
+    const result = await this.apiClient.post('notificaciones/marcar-leida/', {
       notificacion_id: notificacionId,
       accion: 'marcar_leida',
     })
@@ -75,7 +75,7 @@ export default class ResenaRepository {
    * Marca todas las notificaciones de un trueque como leídas
    */
   async marcarNotificacionesTruequeLeidas(truequeId) {
-    const result = await this.apiClient.post('notificaciones/', {
+    const result = await this.apiClient.post('notificaciones/marcar-leida/', {
       trueque_id: truequeId,
       accion: 'marcar_leidas_trueque',
     })

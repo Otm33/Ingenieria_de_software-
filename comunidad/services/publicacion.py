@@ -4,6 +4,7 @@ from ..validators import contiene_palabra_prohibida
 from .matchmaking import MatchmakingService
 from .matchmaking_multiple import MatchmakingMultipleService
 import logging
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +21,19 @@ class PublicacionService:
     
     def _disparar_deteccion_ciclos_multiples(self, usuario):
         servicio = self.matchmaking_multiple_service or MatchmakingMultipleService()
-        logger.debug("Disparando detección de ciclos múltiples para usuario %s", usuario.id)
+        logger.info(f"Disparando detección de ciclos múltiples para usuario {usuario.id}")
         servicio.detectar_y_notificar_ciclos(usuario)
 
     def crear_publicacion(self, usuario, datos):
+        logger.warning(f"Iniciando crear_publicacion para usuario {usuario.id}")
+
         tipo = datos.get("tipo")
         titulo = datos.get("titulo")
         descripcion = datos.get("descripcion")
         categoria = datos.get("categoria")
         urgencia = datos.get("urgencia", "NORMAL")
+
+        logger.warning(f"Datos recibidos - tipo={tipo}, titulo={titulo}")
 
         if not all([tipo, titulo, descripcion, categoria]):
             raise BusinessError("Faltan datos obligatorios para la publicacion.")
@@ -50,6 +55,8 @@ class PublicacionService:
         if contiene_palabra_prohibida(titulo) or contiene_palabra_prohibida(descripcion):
             raise BusinessError("La publicación contiene palabras no permitidas.")
 
+        logger.warning(f"Validaciones básicas pasadas, creando publicación temporal")
+
         # Crear publicación temporal para validar reglas de negocio
         from ..models import Publicacion
         publicacion_temp = Publicacion(
@@ -61,11 +68,14 @@ class PublicacionService:
             urgencia=urgencia,
             esta_activa=True
         )
-        
+
         # Usar método de negocio de Publicacion para validar reglas
         es_valido, mensaje_validacion = publicacion_temp.validar_reglas_negocio()
         if not es_valido:
+            logger.warning(f"Validación fallida: {mensaje_validacion}")
             raise BusinessError(mensaje_validacion)
+
+        logger.warning(f"Validación de reglas de negocio pasada")
 
         publicacion = self.publicacion_repository.crear(usuario, {
             "tipo": tipo,
@@ -74,21 +84,30 @@ class PublicacionService:
             "categoria": categoria,
             "urgencia": urgencia,
         })
-        
+
+        # Forzar refresh de la publicación y del usuario para asegurar que estén guardados en la base de datos
+        from ..models import Publicacion, Usuario
+        publicacion = Publicacion.objects.get(id=publicacion.id)
+        usuario = Usuario.objects.get(id=usuario.id)
+
+        logger.warning(f"Publicación creada exitosamente: ID={publicacion.id}, tipo={tipo}, titulo={titulo}, usuario={usuario.id}")
+
         # Detección de matches (no falla si hay error)
         try:
+            logger.warning(f"Iniciando detección de matches para usuario {usuario.id} después de crear publicación {publicacion.id}")
             self._disparar_deteccion_matches(usuario)
+            logger.warning(f"Detección de matches completada para usuario {usuario.id}")
         except Exception as e:
-            # No fallar la publicación si la detección falla
-            pass
-        
+            logger.exception(f"Error en detección de matches después de crear publicación para usuario {usuario.id}: {e}")
+
         # Detección de ciclos múltiples (no falla si hay error)
         try:
+            logger.warning(f"Iniciando detección de ciclos múltiples para usuario {usuario.id} después de crear publicación {publicacion.id}")
             self._disparar_deteccion_ciclos_multiples(usuario)
+            logger.warning(f"Detección de ciclos múltiples completada para usuario {usuario.id}")
         except Exception as e:
-            # No fallar la publicación si la detección falla
-            logger.exception("Error en detección de ciclos múltiples después de crear publicación para usuario %s", usuario.id)
-        
+            logger.exception(f"Error en detección de ciclos múltiples después de crear publicación para usuario {usuario.id}: {e}")
+
         return publicacion
 
     def pausar_publicacion(self, usuario, publicacion_id):
@@ -131,11 +150,11 @@ class PublicacionService:
             try:
                 self._disparar_deteccion_matches(usuario)
             except Exception as e:
-                pass
-            
+                logger.exception(f"Error en detección de matches al reactivar publicación para usuario {usuario.id}: {e}")
+
             # Detección de ciclos múltiples (no falla si hay error)
             try:
                 self._disparar_deteccion_ciclos_multiples(usuario)
             except Exception as e:
-                logger.exception("Error en detección de ciclos múltiples al reactivar publicación para usuario %s", usuario.id)
+                logger.exception(f"Error en detección de ciclos múltiples al reactivar publicación para usuario {usuario.id}: {e}")
         return publicacion

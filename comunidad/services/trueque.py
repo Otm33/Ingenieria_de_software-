@@ -182,7 +182,8 @@ class TruequeService(TruequeInterface):
             if not trueque.participante(usuario):
                 raise BusinessError("No eres parte de este trueque.", status_code=403)
 
-            if not trueque.esta_aceptado():
+            # Aceptar tanto trueques en estado ACEPTADO como EN_CURSO
+            if getattr(trueque, 'estado', None) not in ("ACEPTADO", "EN_CURSO"):
                 raise BusinessError("El trueque debe estar aceptado para confirmar finalización.", status_code=400)
 
             # Usar método de negocio de AcuerdoTrueque para verificar si puede confirmar

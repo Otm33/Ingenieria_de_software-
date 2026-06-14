@@ -27,7 +27,7 @@
 
     <section v-if="modoPublicar" :class="['panel', 'panel--publicar']">
       <div class="panel__header">
-        <h3 class="panel__title">📝 Publicar nuevo talento o necesidad</h3>
+        <h3 class="panel__title">Publicar nuevo talento o necesidad</h3>
         <button class="button button--secondary" type="button" @click="volverACartelera">
           ← Volver a Cartelera
         </button>

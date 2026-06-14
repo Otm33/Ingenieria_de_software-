@@ -10,6 +10,8 @@ export default class User {
     es_comercio = false,
     is_staff = false,
     is_superuser = false,
+    esStaff = false,
+    esSuperusuario = false,
   } = {}) {
     this.id = id
     this.username = username
@@ -19,8 +21,9 @@ export default class User {
     this.promedioEstrellas = Number(promedio_estrellas)
     this.esComercio = Boolean(es_comercio)
     // CAMBIO AUTH: estos campos controlan la visibilidad del menu administrativo.
-    this.esStaff = Boolean(is_staff)
-    this.esSuperusuario = Boolean(is_superuser)
+    // Soporta ambos nombres: is_staff/is_superuser (formato Django) y esStaff/esSuperusuario (formato backend)
+    this.esStaff = Boolean(esStaff !== undefined ? esStaff : is_staff)
+    this.esSuperusuario = Boolean(esSuperusuario !== undefined ? esSuperusuario : is_superuser)
   }
 
   get esAdmin() {

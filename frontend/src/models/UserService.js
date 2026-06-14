@@ -273,7 +273,7 @@ export default class UserService {
   }
 
   async marcarNotificacionLeida(notificacionId) {
-    return await this._request('notificaciones/', {
+    return await this._request('notificaciones/marcar-leida/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notificacion_id: notificacionId }),
@@ -281,7 +281,7 @@ export default class UserService {
   }
 
   async marcarNotificacionesTruequeLeidas(truequeId) {
-    return await this._request('notificaciones/', {
+    return await this._request('notificaciones/marcar-leida/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trueque_id: truequeId }),
@@ -294,6 +294,35 @@ export default class UserService {
       trueques: data.trueques || [],
       cantidad: data.cantidad ?? (data.trueques || []).length,
     }
+  }
+
+  async obtenerMisTruequesMultiples() {
+    const data = await this._request('mis-trueques-multiples/')
+    return {
+      trueques_multiple: data.trueques_multiple || [],
+      cantidad: data.cantidad ?? (data.trueques_multiple || []).length,
+    }
+  }
+
+  async validarCodigoParMultiple(truequeMultipleId, par, codigo) {
+    return await this._request(`trueques-multiples/${truequeMultipleId}/validar-codigo/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo, par }),
+    })
+  }
+
+  async registrarResenaMultiple(truequeMultipleId, calificadoId, estrellas, comentario) {
+    return await this._request('resenas-multiples/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trueque_multiple_id: truequeMultipleId,
+        calificado_id: calificadoId,
+        estrellas,
+        comentario,
+      }),
+    })
   }
 
   get users() {

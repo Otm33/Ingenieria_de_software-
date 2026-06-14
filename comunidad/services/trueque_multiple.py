@@ -20,6 +20,7 @@ class TruequeMultipleService:
         """Detecta si existe un ciclo A→B→C→A donde el usuario es parte."""
         from ..models import Publicacion, Usuario
         logger = logging.getLogger(__name__)
+        logger.info(f"Iniciando detección de ciclos múltiples para usuario {usuario.id} ({usuario.username})")
         ciclos = []
         # Construir mapas en memoria para reducir queries repetidos
         publicaciones = list(
@@ -54,14 +55,14 @@ class TruequeMultipleService:
             for pub_talento_a in talentos_a:
                 titulo_a = pub_talento_a.titulo
                 candidatos_b = necesidad_usuarios_por_titulo.get(titulo_a, [])
-                logger.debug("Buscando candidatos B para talento '%s' de usuario %s: %d encontrados", titulo_a, uid_a, len(candidatos_b))
+                logger.info("Buscando candidatos B para talento '%s' de usuario %s: %d encontrados", titulo_a, uid_a, len(candidatos_b))
                 for usuario_b_obj, pub_nec_b in candidatos_b:
                     if usuario_b_obj.id == uid_a:
                         continue
                     if not usuario_b_obj.is_active:
                         continue
                     if self.repository.usuario_tiene_trueque_multiple_activo(usuario_b_obj):
-                        logger.debug("Usuario B %s ya tiene trueque múltiple activo, skip", usuario_b_obj.id)
+                        logger.info("Usuario B %s ya tiene trueque múltiple activo, skip", usuario_b_obj.id)
                         continue
 
                     talentos_b = talentos_por_usuario.get(usuario_b_obj.id, [])
@@ -74,7 +75,7 @@ class TruequeMultipleService:
                             if not usuario_c_obj.is_active:
                                 continue
                             if self.repository.usuario_tiene_trueque_multiple_activo(usuario_c_obj):
-                                logger.debug("Usuario C %s ya tiene trueque múltiple activo, skip", usuario_c_obj.id)
+                                logger.info("Usuario C %s ya tiene trueque múltiple activo, skip", usuario_c_obj.id)
                                 continue
 
                             talentos_c = talentos_por_usuario.get(usuario_c_obj.id, [])
@@ -86,7 +87,7 @@ class TruequeMultipleService:
                                     if (usuario_a.horas_de_vida < -10.0 or
                                         usuario_b_obj.horas_de_vida < -10.0 or
                                         usuario_c_obj.horas_de_vida < -10.0):
-                                        logger.debug("Alguno tiene saldo < -10, skip: %s, %s, %s", usuario_a.id, usuario_b_obj.id, usuario_c_obj.id)
+                                        logger.info("Alguno tiene saldo < -10, skip: %s, %s, %s", usuario_a.id, usuario_b_obj.id, usuario_c_obj.id)
                                         continue
 
                                     # Buscar publicaciones específicas para cada par
@@ -116,9 +117,9 @@ class TruequeMultipleService:
                                         # Solo añadir si el usuario pasado participa en el ciclo
                                         if usuario.id in (usuario_a.id, usuario_b_obj.id, usuario_c_obj.id):
                                             ciclos.append(ciclo)
-                                            logger.info("Ciclo detectado: %s -> %s -> %s", usuario_a.id, usuario_b_obj.id, usuario_c_obj.id)
+                                            logger.info(f"Ciclo detectado: {usuario_a.username} -> {usuario_b_obj.username} -> {usuario_c_obj.username}")
 
-        logger.debug("Total ciclos detectados para usuario %s: %d", getattr(usuario, 'id', usuario), len(ciclos))
+        logger.info(f"Total ciclos detectados para usuario {usuario.id}: {len(ciclos)}")
         return ciclos
     
     def crear_propuesta_multiple(self, ciclo, usuario_origen=None):
@@ -240,47 +241,93 @@ class TruequeMultipleService:
     
     def aceptar_propuesta_multiple(self, usuario, trueque_id):
         """Usuario acepta participar en el trueque múltiple."""
+        logger = logging.getLogger(__name__)
         with transaction.atomic():
             try:
+                logger.info("Aceptar propuesta multiple: usuario=%s trueque_id=%s", getattr(usuario, 'id', usuario), trueque_id)
                 trueque = self.repository.obtener_bloqueado(trueque_id)
             except ObjectDoesNotExist:
+                logger.exception("Trueque múltiple no encontrado: %s", trueque_id)
                 raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
-            
+
             # Verificar que el usuario es parte del trueque
             if not trueque.participante(usuario):
+                logger.warning("Usuario %s no es participante del trueque %s", getattr(usuario, 'id', usuario), trueque_id)
                 raise BusinessError("No eres parte de este trueque múltiple.", status_code=403)
-            
+
             # Verificar que no esté expirado
             if trueque.esta_expirado():
+                logger.info("Trueque %s expirado, marcando EXPIRADO", trueque_id)
                 trueque.estado = 'EXPIRADO'
                 self.repository.guardar(trueque)
                 raise BusinessError("El trueque múltiple ha expirado.", status_code=400)
-            
+
             # Verificar estado
-            if trueque.estado != 'PENDIENTE':
-                raise BusinessError("Solo se pueden aceptar trueques múltiples en estado PENDIENTE.", status_code=400)
-            
-            # Marcar usuario como aceptado
+            # Aceptar está permitido cuando el trueque está pendiente. Además
+            # permitimos procesar aceptaciones si el estado es ACEPTADO pero
+            # algunas banderas de aceptación aún faltan (caso inconsistente
+            # que queremos poder corregir sin bloquear a los usuarios).
+            if trueque.estado not in ('PENDIENTE', 'ACEPTADO'):
+                logger.info("Aceptar solicitud en estado no válido: %s", trueque.estado)
+                raise BusinessError("Solo se pueden aceptar trueques múltiples en estado PENDIENTE o ACEPTADO.", status_code=400)
+
+            # Log estado previo
+            logger.debug(
+                "Antes de aceptar (trueque=%s) usuario1_aceptado=%s usuario2_aceptado=%s usuario3_aceptado=%s",
+                trueque_id, trueque.usuario1_aceptado, trueque.usuario2_aceptado, trueque.usuario3_aceptado,
+            )
+
+            # Determinar el rol (preferentemente por emisor) y marcar solo la
+            # bandera correspondiente. Esto evita que la aceptación de un
+            # participante active flags pertenecientes a otros emisores.
             rol = trueque.obtener_usuario_por_rol(usuario)
+            logger.info("Marcar aceptación para usuario %s en trueque %s como rol %s", getattr(usuario, 'id', usuario), trueque_id, rol)
             if rol == 1:
                 trueque.usuario1_aceptado = True
             elif rol == 2:
                 trueque.usuario2_aceptado = True
             elif rol == 3:
                 trueque.usuario3_aceptado = True
-            
-            # Si todos aceptaron, cambiar estado y generar códigos
+            else:
+                logger.error("No se encontró la participación del usuario %s en el trueque %s", getattr(usuario, 'id', usuario), trueque_id)
+
+            # Log: aceptación por participante (útil para depurar duplicados/roles)
+            participantes = {trueque.emisor1_id, trueque.receptor1_id, trueque.emisor2_id, trueque.receptor2_id, trueque.emisor3_id, trueque.receptor3_id}
+            aceptacion_por_participante = {}
+            for pid in participantes:
+                acepto = False
+                if pid in (trueque.emisor1_id, trueque.receptor1_id):
+                    acepto = acepto or trueque.usuario1_aceptado
+                if pid in (trueque.emisor2_id, trueque.receptor2_id):
+                    acepto = acepto or trueque.usuario2_aceptado
+                if pid in (trueque.emisor3_id, trueque.receptor3_id):
+                    acepto = acepto or trueque.usuario3_aceptado
+                aceptacion_por_participante[pid] = acepto
+            logger.debug("Aceptación por participante (trueque=%s): %s", trueque_id, aceptacion_por_participante)
+
+            # Si todos los participantes únicos aceptaron, cambiar estado y generar códigos
             if trueque.todos_aceptaron():
+                logger.info("Todos aceptaron trueque %s, generando códigos y marcando ACEPTADO", trueque_id)
                 trueque.estado = 'ACEPTADO'
-                trueque.codigo_par1 = generar_codigo_confirmacion()
-                trueque.codigo_par2 = generar_codigo_confirmacion()
-                trueque.codigo_par3 = generar_codigo_confirmacion()
-            
+                # Generar solo códigos faltantes (evita sobrescribir/duplicar)
+                if not trueque.codigo_par1:
+                    trueque.codigo_par1 = generar_codigo_confirmacion()
+                if not trueque.codigo_par2:
+                    trueque.codigo_par2 = generar_codigo_confirmacion()
+                if not trueque.codigo_par3:
+                    trueque.codigo_par3 = generar_codigo_confirmacion()
+
             self.repository.guardar(trueque)
-            
+
+            # Log estado posterior
+            logger.debug(
+                "Después de aceptar (trueque=%s) usuario1_aceptado=%s usuario2_aceptado=%s usuario3_aceptado=%s estado=%s",
+                trueque_id, trueque.usuario1_aceptado, trueque.usuario2_aceptado, trueque.usuario3_aceptado, trueque.estado,
+            )
+
             if trueque.todos_aceptaron():
                 return "Todos los usuarios han aceptado. El trueque múltiple está en curso. Usa los códigos para finalizar cada par."
-            
+
             return "Aceptación registrada. Esperando que los demás usuarios acepten."
     
     def rechazar_propuesta_multiple(self, usuario, trueque_id):
@@ -301,7 +348,7 @@ class TruequeMultipleService:
             
             return "Trueque múltiple rechazado. El ciclo ha sido cancelado para todos."
     
-    def validar_codigo_par(self, usuario, trueque_id, codigo):
+    def validar_codigo_par(self, usuario, trueque_id, codigo, par=None):
         """Valida el código de un par específico y marca como confirmado."""
         with transaction.atomic():
             try:
@@ -314,24 +361,28 @@ class TruequeMultipleService:
                 raise BusinessError("No eres parte de este trueque múltiple.", status_code=403)
             
             # Verificar estado
-            if trueque.estado != 'ACEPTADO':
-                raise BusinessError("El trueque múltiple debe estar aceptado para validar códigos.", status_code=400)
+            if trueque.estado not in ('ACEPTADO', 'EN_CURSO'):
+                raise BusinessError("El trueque múltiple debe estar aceptado o en curso para validar códigos.", status_code=400)
             
-            # Identificar a qué par pertenece el usuario
-            pares = trueque.obtener_pares_del_usuario(usuario)
-            if not pares:
-                raise BusinessError("No se pudo identificar el par del usuario.", status_code=400)
+            # Si se especifica el par, usarlo directamente. Si no, identificarlo automáticamente.
+            if par is not None:
+                pares = [par]
+            else:
+                # Identificar a qué par pertenece el usuario
+                pares = trueque.obtener_pares_del_usuario(usuario)
+                if not pares:
+                    raise BusinessError("No se pudo identificar el par del usuario.", status_code=400)
             
             # Validar el código correspondiente
             codigo_valido = False
-            for par in pares:
-                if par == 1 and trueque.codigo_par1 == codigo:
+            for par_num in pares:
+                if par_num == 1 and trueque.codigo_par1 == codigo:
                     trueque.par1_confirmado = True
                     codigo_valido = True
-                elif par == 2 and trueque.codigo_par2 == codigo:
+                elif par_num == 2 and trueque.codigo_par2 == codigo:
                     trueque.par2_confirmado = True
                     codigo_valido = True
-                elif par == 3 and trueque.codigo_par3 == codigo:
+                elif par_num == 3 and trueque.codigo_par3 == codigo:
                     trueque.par3_confirmado = True
                     codigo_valido = True
             
@@ -342,11 +393,13 @@ class TruequeMultipleService:
             if trueque.estado == 'ACEPTADO':
                 trueque.estado = 'EN_CURSO'
             
-            self.repository.guardar(trueque)
-            
+            # Finalizar el trueque si todos los pares confirmaron
             if trueque.todos_pares_confirmaron():
-                return "Todos los pares han confirmado. El trueque múltiple está listo para finalizar."
+                trueque.estado = 'FINALIZADO'
+                self.repository.guardar(trueque)
+                return "Todos los pares han confirmado. El trueque múltiple ha sido finalizado. Ahora puedes dejar reseñas."
             
+            self.repository.guardar(trueque)
             return "Código validado. Esperando confirmación de los demás pares."
     
     def finalizar_par(self, usuario, trueque_id):

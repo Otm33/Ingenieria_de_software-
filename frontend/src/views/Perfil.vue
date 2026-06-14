@@ -103,14 +103,14 @@
           </div>
 
           <div class="perfil-seccion">
-            <h4>⭐ Reseñas Recibidas ({{ cantidadResenas }})</h4>
+            <h4> Reseñas Recibidas ({{ cantidadResenas }})</h4>
             <div v-if="!datosPerfil?.resenas_recibidas || datosPerfil.resenas_recibidas.length === 0" class="empty-state">
               No has recibido reseñas aún
             </div>
             <div v-else class="resenas-lista">
               <div v-for="resena in datosPerfil.resenas_recibidas" :key="resena.id" class="resena-item">
                 <div class="resena-calificacion">
-                  <span class="estrellas">{{ '⭐'.repeat(resena.estrellas) }}</span>
+                  <span class="estrellas">{{ ''.repeat(resena.estrellas) }}</span>
                   <span class="calificador">por @{{ nombreCalificador(resena) }}</span>
                 </div>
                 <p class="resena-comentario">{{ resena.comentario }}</p>
@@ -119,116 +119,468 @@
           </div>
 
           <div class="perfil-seccion">
-            <h4>Mis trueques ({{ misTrueques.length }})</h4>
+            <h4>Mis trueques ({{ misTrueques.length }}) | Trueques Múltiples ({{ misTruequesMultiples.length }})</h4>
             <div v-if="cargandoTrueques" class="loading-state">Cargando trueques...</div>
-            <div v-else-if="!misTrueques.length" class="empty-state">
-              No tienes acuerdos de trueque registrados.
+            <div v-else-if="!misTrueques.length && !misTruequesMultiples.length" class="empty-state">
+              No tienes acuerdos de trueque ni trueques múltiples registrados.
             </div>
-            <div v-else class="trueques-grid">
-              <article v-for="trueque in misTrueques" :key="trueque.id" class="trueque-card">
-                <div class="trueque-card__header">
-                  <strong>{{ nombreContraparte(trueque) }}</strong>
-                  <span :class="['trueque-card__estado', claseEstado(trueque.estado)]">
-                    {{ trueque.estado }}
-                  </span>
-                </div>
-                <div class="trueque-card__pubs">
-                  <span v-if="trueque.es_intercambio_mutuo" class="trueque-mutuo-badge">
-                    Intercambio equilibrado (0 horas netas)
-                  </span>
-                  <span v-if="etiquetaOfertaPropia(trueque)">
-                    {{ etiquetaOfertaPropia(trueque) }}: {{ tituloOfertaPropia(trueque) }}
-                  </span>
-                  <span v-if="etiquetaOfertaContraparte(trueque)">
-                    {{ etiquetaOfertaContraparte(trueque) }}: {{ tituloOfertaContraparte(trueque) }}
-                  </span>
-                  <span
-                    v-if="!trueque.es_intercambio_mutuo && trueque.impacto_horas"
-                    class="trueque-impacto"
-                  >
-                    Impacto en tus horas: {{ formatearImpacto(trueque.impacto_horas) }}
-                  </span>
-                </div>
-                <p v-if="mensajeEspera(trueque)" class="trueque-espera">
-                  {{ mensajeEspera(trueque) }}
-                </p>
-                <div v-if="trueque.estado === 'EN_CURSO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
-                  <div v-if="Number(trueque.emisor) === Number(datosPerfil?.usuario?.id)" class="codigo-emisor">
-                    <span class="codigo-label">Código de confirmación:</span>
-                    <span class="codigo-valor">{{ trueque.codigo_confirmacion }}</span>
-                    <span class="codigo-instruccion">Comparte este código con {{ trueque.receptor_nombre }}</span>
+
+            <div v-else>
+              <div v-if="misTruequesMultiples.length > 0" class="trueques-grid">
+                <article v-for="tm in misTruequesMultiples" :key="'tm-' + tm.id" class="trueque-card">
+                  <div class="trueque-card__header">
+                    <strong>Trueque Múltiple #{{ tm.id }}</strong>
+                    <span :class="['trueque-card__estado', claseEstado(tm.estado)]">{{ tm.estado }}</span>
                   </div>
-                  <div v-else class="codigo-receptor">
-                    <span class="codigo-instruccion">Ingresa el código que te compartió {{ trueque.emisor_nombre }}</span>
-                    <div v-if="mostrandoInputCodigo === trueque.id" class="codigo-input-container">
-                      <input
-                        v-model="codigoIngresado"
-                        type="text"
-                        class="codigo-input"
-                        placeholder="Ingresa el código de 8 caracteres"
-                        maxlength="8"
-                        @keyup.enter="validarCodigo(trueque)"
-                      />
+
+                  <div class="trueque-card__pubs">
+                    <div v-if="tm.publicacion_emisor1 || tm.publicacion_receptor1">
+                      <div v-if="!tm.todos_aceptaron" style="margin-bottom: 4px;">
+                        Usuario1 aceptado: <strong>{{ tm.usuario1_aceptado ? 'Sí' : 'No' }}</strong>
+                      </div>
+                      <div><strong>Par 1:</strong>
+                        <span v-if="tm.publicacion_emisor1">Ofrezco: {{ tm.publicacion_emisor1.titulo }}</span>
+                        <span v-if="tm.publicacion_receptor1"> | Recibo: {{ tm.publicacion_receptor1.titulo }}</span>
+                      </div>
+                    </div>
+                    <div v-if="tm.publicacion_emisor2 || tm.publicacion_receptor2">
+                      <div v-if="!tm.todos_aceptaron" style="margin-bottom: 4px;">
+                        Usuario2 aceptado: <strong>{{ tm.usuario2_aceptado ? 'Sí' : 'No' }}</strong>
+                      </div>
+                      <div><strong>Par 2:</strong>
+                        <span v-if="tm.publicacion_emisor2">Ofrezco: {{ tm.publicacion_emisor2.titulo }}</span>
+                        <span v-if="tm.publicacion_receptor2"> | Recibo: {{ tm.publicacion_receptor2.titulo }}</span>
+                      </div>
+                    </div>
+                    <div v-if="tm.publicacion_emisor3 || tm.publicacion_receptor3">
+                      <div v-if="!tm.todos_aceptaron" style="margin-bottom: 4px;">
+                        Usuario3 aceptado: <strong>{{ tm.usuario3_aceptado ? 'Sí' : 'No' }}</strong>
+                      </div>
+                      <div><strong>Par 3:</strong>
+                        <span v-if="tm.publicacion_emisor3">Ofrezco: {{ tm.publicacion_emisor3.titulo }}</span>
+                        <span v-if="tm.publicacion_receptor3"> | Recibo: {{ tm.publicacion_receptor3.titulo }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="!tm.todos_aceptaron" class="trueque-card__meta" style="margin-top:8px;">
+                    <div style="font-size:0.9rem; color:var(--text-muted);">
+                      <div>Todos aceptaron: <strong>No</strong></div>
+                    </div>
+                  </div>
+
+                  <div v-if="tm.todos_aceptaron" class="codigo-confirmacion-multiple" style="margin: 1rem 0;">
+                    <div v-if="tm.codigo_par1" class="codigo-par-item">
+                      <div v-if="esEmisorPar(tm, 1)" class="codigo-emisor">
+                        <span class="codigo-label">Código para Par 1:</span>
+                        <span class="codigo-valor">{{ tm.codigo_par1 }}</span>
+                        <span class="codigo-instruccion">Comparte este código con {{ tm.receptor1_nombre }}</span>
+                        <span v-if="tm.par1_confirmado" class="codigo-confirmado">✓ Confirmado</span>
+                      </div>
+                      <div v-else-if="esReceptorPar(tm, 1)" class="codigo-receptor">
+                        <span v-if="tm.par1_confirmado" class="codigo-confirmado">✓ Código validado correctamente</span>
+                        <span v-else class="codigo-instruccion">Ingresa el código que te compartió {{ tm.emisor1_nombre }}</span>
+                        <div v-if="!tm.par1_confirmado && mostrandoInputCodigoPar === `${tm.id}-1`" class="codigo-input-container">
+                          <input
+                            v-model="codigoIngresadoPar1"
+                            type="text"
+                            class="codigo-input"
+                            placeholder="Ingresa el código de 8 caracteres"
+                            maxlength="8"
+                            @keyup.enter="validarCodigoParMultiple(tm, 1)"
+                          />
+                          <button
+                            class="button button--primary button--small"
+                            type="button"
+                            :disabled="procesandoTruequeId === tm.id"
+                            @click="validarCodigoParMultiple(tm, 1)"
+                          >
+                            Validar
+                          </button>
+                          <button
+                            class="button button--secondary button--small"
+                            type="button"
+                            @click="mostrandoInputCodigoPar = null; codigoIngresadoPar1 = ''"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        <button
+                          v-else-if="!tm.par1_confirmado"
+                          class="button button--primary button--small"
+                          type="button"
+                          @click="mostrandoInputCodigoPar = `${tm.id}-1`"
+                        >
+                          Ingresar código
+                        </button>
+                      </div>
+                    </div>
+                    <div v-if="tm.codigo_par2" class="codigo-par-item">
+                      <div v-if="esEmisorPar(tm, 2)" class="codigo-emisor">
+                        <span class="codigo-label">Código para Par 2:</span>
+                        <span class="codigo-valor">{{ tm.codigo_par2 }}</span>
+                        <span class="codigo-instruccion">Comparte este código con {{ tm.receptor2_nombre }}</span>
+                        <span v-if="tm.par2_confirmado" class="codigo-confirmado">✓ Confirmado</span>
+                      </div>
+                      <div v-else-if="esReceptorPar(tm, 2)" class="codigo-receptor">
+                        <span v-if="tm.par2_confirmado" class="codigo-confirmado">✓ Código validado correctamente</span>
+                        <span v-else class="codigo-instruccion">Ingresa el código que te compartió {{ tm.emisor2_nombre }}</span>
+                        <div v-if="!tm.par2_confirmado && mostrandoInputCodigoPar === `${tm.id}-2`" class="codigo-input-container">
+                          <input
+                            v-model="codigoIngresadoPar2"
+                            type="text"
+                            class="codigo-input"
+                            placeholder="Ingresa el código de 8 caracteres"
+                            maxlength="8"
+                            @keyup.enter="validarCodigoParMultiple(tm, 2)"
+                          />
+                          <button
+                            class="button button--primary button--small"
+                            type="button"
+                            :disabled="procesandoTruequeId === tm.id"
+                            @click="validarCodigoParMultiple(tm, 2)"
+                          >
+                            Validar
+                          </button>
+                          <button
+                            class="button button--secondary button--small"
+                            type="button"
+                            @click="mostrandoInputCodigoPar = null; codigoIngresadoPar2 = ''"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        <button
+                          v-else-if="!tm.par2_confirmado"
+                          class="button button--primary button--small"
+                          type="button"
+                          @click="mostrandoInputCodigoPar = `${tm.id}-2`"
+                        >
+                          Ingresar código
+                        </button>
+                      </div>
+                    </div>
+                    <div v-if="tm.codigo_par3" class="codigo-par-item">
+                      <div v-if="esEmisorPar(tm, 3)" class="codigo-emisor">
+                        <span class="codigo-label">Código para Par 3:</span>
+                        <span class="codigo-valor">{{ tm.codigo_par3 }}</span>
+                        <span class="codigo-instruccion">Comparte este código con {{ tm.receptor3_nombre }}</span>
+                        <span v-if="tm.par3_confirmado" class="codigo-confirmado">✓ Confirmado</span>
+                      </div>
+                      <div v-else-if="esReceptorPar(tm, 3)" class="codigo-receptor">
+                        <span v-if="tm.par3_confirmado" class="codigo-confirmado">✓ Código validado correctamente</span>
+                        <span v-else class="codigo-instruccion">Ingresa el código que te compartió {{ tm.emisor3_nombre }}</span>
+                        <div v-if="!tm.par3_confirmado && mostrandoInputCodigoPar === `${tm.id}-3`" class="codigo-input-container">
+                          <input
+                            v-model="codigoIngresadoPar3"
+                            type="text"
+                            class="codigo-input"
+                            placeholder="Ingresa el código de 8 caracteres"
+                            maxlength="8"
+                            @keyup.enter="validarCodigoParMultiple(tm, 3)"
+                          />
+                          <button
+                            class="button button--primary button--small"
+                            type="button"
+                            :disabled="procesandoTruequeId === tm.id"
+                            @click="validarCodigoParMultiple(tm, 3)"
+                          >
+                            Validar
+                          </button>
+                          <button
+                            class="button button--secondary button--small"
+                            type="button"
+                            @click="mostrandoInputCodigoPar = null; codigoIngresadoPar3 = ''"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        <button
+                          v-else-if="!tm.par3_confirmado"
+                          class="button button--primary button--small"
+                          type="button"
+                          @click="mostrandoInputCodigoPar = `${tm.id}-3`"
+                        >
+                          Ingresar código
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="tm.todos_pares_confirmaron && tm.estado === 'FINALIZADO'" class="resenas-multiple" style="margin: 1rem 0; padding: 1rem; background: #f0f7ff; border-radius: 8px; border: 1px solid #b8daff;">
+                    <h4 style="margin: 0 0 1rem 0; color: #004085;">Deja tu reseña</h4>
+                    <div v-if="esReceptorPar(tm, 1)" class="resena-par-item" style="margin-bottom: 1rem;">
+                      <div style="margin-bottom: 0.5rem;">
+                        <strong>Reseña para {{ tm.emisor1_nombre }} (quien resolvió tu necesidad en Par 1):</strong>
+                      </div>
+                      <div v-if="mostrandoFormularioResena === `${tm.id}-1`">
+                        <div style="margin-bottom: 0.5rem;">
+                          <label style="margin-right: 0.5rem;">Calificación:</label>
+                          <select v-model="resenaEstrellas" style="padding: 0.25rem;">
+                            <option value="1">1 estrella</option>
+                            <option value="2">2 estrellas</option>
+                            <option value="3">3 estrellas</option>
+                            <option value="4">4 estrellas</option>
+                            <option value="5">5 estrellas</option>
+                          </select>
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                          <label style="display: block; margin-bottom: 0.25rem;">Comentario:</label>
+                          <textarea
+                            v-model="resenaComentario"
+                            placeholder="Escribe tu comentario (opcional)"
+                            maxlength="500"
+                            style="width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; min-height: 60px;"
+                          ></textarea>
+                        </div>
+                        <button
+                          class="button button--primary button--small"
+                          type="button"
+                          :disabled="procesandoTruequeId === tm.id"
+                          @click="enviarResenaMultiple(tm, tm.emisor1)"
+                        >
+                          Enviar reseña
+                        </button>
+                        <button
+                          class="button button--secondary button--small"
+                          type="button"
+                          @click="mostrandoFormularioResena = null; resenaEstrellas = 5; resenaComentario = ''"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
                       <button
+                        v-else
                         class="button button--primary button--small"
                         type="button"
-                        :disabled="procesandoTruequeId === trueque.id"
-                        @click="validarCodigo(trueque)"
+                        @click="mostrandoFormularioResena = `${tm.id}-1`"
                       >
-                        Validar
-                      </button>
-                      <button
-                        class="button button--secondary button--small"
-                        type="button"
-                        @click="mostrandoInputCodigo = null; codigoIngresado = ''"
-                      >
-                        Cancelar
+                        Dejar reseña
                       </button>
                     </div>
+                    <div v-if="esReceptorPar(tm, 2)" class="resena-par-item" style="margin-bottom: 1rem;">
+                      <div style="margin-bottom: 0.5rem;">
+                        <strong>Reseña para {{ tm.emisor2_nombre }} (quien resolvió tu necesidad en Par 2):</strong>
+                      </div>
+                      <div v-if="mostrandoFormularioResena === `${tm.id}-2`">
+                        <div style="margin-bottom: 0.5rem;">
+                          <label style="margin-right: 0.5rem;">Calificación:</label>
+                          <select v-model="resenaEstrellas" style="padding: 0.25rem;">
+                            <option value="1">1 estrella</option>
+                            <option value="2">2 estrellas</option>
+                            <option value="3">3 estrellas</option>
+                            <option value="4">4 estrellas</option>
+                            <option value="5">5 estrellas</option>
+                          </select>
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                          <label style="display: block; margin-bottom: 0.25rem;">Comentario:</label>
+                          <textarea
+                            v-model="resenaComentario"
+                            placeholder="Escribe tu comentario (opcional)"
+                            maxlength="500"
+                            style="width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; min-height: 60px;"
+                          ></textarea>
+                        </div>
+                        <button
+                          class="button button--primary button--small"
+                          type="button"
+                          :disabled="procesandoTruequeId === tm.id"
+                          @click="enviarResenaMultiple(tm, tm.emisor2)"
+                        >
+                          Enviar reseña
+                        </button>
+                        <button
+                          class="button button--secondary button--small"
+                          type="button"
+                          @click="mostrandoFormularioResena = null; resenaEstrellas = 5; resenaComentario = ''"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      <button
+                        v-else
+                        class="button button--primary button--small"
+                        type="button"
+                        @click="mostrandoFormularioResena = `${tm.id}-2`"
+                      >
+                        Dejar reseña
+                      </button>
+                    </div>
+                    <div v-if="esReceptorPar(tm, 3)" class="resena-par-item" style="margin-bottom: 1rem;">
+                      <div style="margin-bottom: 0.5rem;">
+                        <strong>Reseña para {{ tm.emisor3_nombre }} (quien resolvió tu necesidad en Par 3):</strong>
+                      </div>
+                      <div v-if="mostrandoFormularioResena === `${tm.id}-3`">
+                        <div style="margin-bottom: 0.5rem;">
+                          <label style="margin-right: 0.5rem;">Calificación:</label>
+                          <select v-model="resenaEstrellas" style="padding: 0.25rem;">
+                            <option value="1">1 estrella</option>
+                            <option value="2">2 estrellas</option>
+                            <option value="3">3 estrellas</option>
+                            <option value="4">4 estrellas</option>
+                            <option value="5">5 estrellas</option>
+                          </select>
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                          <label style="display: block; margin-bottom: 0.25rem;">Comentario:</label>
+                          <textarea
+                            v-model="resenaComentario"
+                            placeholder="Escribe tu comentario (opcional)"
+                            maxlength="500"
+                            style="width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; min-height: 60px;"
+                          ></textarea>
+                        </div>
+                        <button
+                          class="button button--primary button--small"
+                          type="button"
+                          :disabled="procesandoTruequeId === tm.id"
+                          @click="enviarResenaMultiple(tm, tm.emisor3)"
+                        >
+                          Enviar reseña
+                        </button>
+                        <button
+                          class="button button--secondary button--small"
+                          type="button"
+                          @click="mostrandoFormularioResena = null; resenaEstrellas = 5; resenaComentario = ''"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      <button
+                        v-else
+                        class="button button--primary button--small"
+                        type="button"
+                        @click="mostrandoFormularioResena = `${tm.id}-3`"
+                      >
+                        Dejar reseña
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="trueque-card__actions">
                     <button
-                      v-else
+                      v-if="tm.puede_aceptar"
                       class="button button--primary button--small"
-                      type="button"
-                      @click="mostrandoInputCodigo = trueque.id"
+                      :disabled="procesandoTruequeId === tm.id"
+                      @click="aceptarTruequeMultiple(tm)"
                     >
-                      Ingresar código
+                      Aceptar trueque múltiple
+                    </button>
+
+                    <button v-else class="button button--secondary button--small" disabled>
+                      {{ tm.todos_aceptaron ? 'Todos aceptaron' : 'Esperando aceptación' }}
                     </button>
                   </div>
-                </div>
-                <div class="trueque-card__actions">
-                  <button
-                    v-if="trueque.estado === 'PENDIENTE'"
-                    class="button button--primary button--small"
-                    type="button"
-                    @click="completarPropuesta(trueque)"
+                </article>
+              </div>
+
+              <div v-if="misTrueques.length > 0" class="trueques-grid">
+                <article v-for="trueque in misTrueques" :key="trueque.id" class="trueque-card">
+                  <div class="trueque-card__header">
+                    <strong>{{ nombreContraparte(trueque) }}</strong>
+                    <span :class="['trueque-card__estado', claseEstado(trueque.estado)]">
+                      {{ trueque.estado }}
+                    </span>
+                  </div>
+                  <div class="trueque-card__pubs">
+                    <span v-if="trueque.es_intercambio_mutuo" class="trueque-mutuo-badge">
+                      Intercambio equilibrado (0 horas netas)
+                    </span>
+                    <span v-if="etiquetaOfertaPropia(trueque)">
+                      {{ etiquetaOfertaPropia(trueque) }}: {{ tituloOfertaPropia(trueque) }}
+                    </span>
+                    <span v-if="etiquetaOfertaContraparte(trueque)">
+                      {{ etiquetaOfertaContraparte(trueque) }}: {{ tituloOfertaContraparte(trueque) }}
+                    </span>
+                    <span
+                      v-if="!trueque.es_intercambio_mutuo && trueque.impacto_horas"
+                      class="trueque-impacto"
+                    >
+                      Impacto en tus horas: {{ formatearImpacto(trueque.impacto_horas) }}
+                    </span>
+                  </div>
+                  <p v-if="mensajeEspera(trueque)" class="trueque-espera">
+                    {{ mensajeEspera(trueque) }}
+                  </p>
+                  <div v-if="trueque.estado === 'EN_CURSO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
+                    <div v-if="Number(trueque.emisor) === Number(datosPerfil?.usuario?.id)" class="codigo-emisor">
+                      <span class="codigo-label">Código de confirmación:</span>
+                      <span class="codigo-valor">{{ trueque.codigo_confirmacion }}</span>
+                      <span class="codigo-instruccion">Comparte este código con {{ trueque.receptor_nombre }}</span>
+                    </div>
+                    <div v-else class="codigo-receptor">
+                      <span class="codigo-instruccion">Ingresa el código que te compartió {{ trueque.emisor_nombre }}</span>
+                      <div v-if="mostrandoInputCodigo === trueque.id" class="codigo-input-container">
+                        <input
+                          v-model="codigoIngresado"
+                          type="text"
+                          class="codigo-input"
+                          placeholder="Ingresa el código de 8 caracteres"
+                          maxlength="8"
+                          @keyup.enter="validarCodigo(trueque)"
+                        />
+                        <button
+                          class="button button--primary button--small"
+                          type="button"
+                          :disabled="procesandoTruequeId === trueque.id"
+                          @click="validarCodigo(trueque)"
+                        >
+                          Validar
+                        </button>
+                        <button
+                          class="button button--secondary button--small"
+                          type="button"
+                          @click="mostrandoInputCodigo = null; codigoIngresado = ''"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      <button
+                        v-else
+                        class="button button--primary button--small"
+                        type="button"
+                        @click="mostrandoInputCodigo = trueque.id"
+                      >
+                        Ingresar código
+                      </button>
+                    </div>
+                  </div>
+                  <div class="trueque-card__actions">
+                    <button
+                      v-if="trueque.estado === 'PENDIENTE'"
+                      class="button button--primary button--small"
+                      type="button"
+                      @click="completarPropuesta(trueque)"
+                    >
+                      {{ etiquetaPropuestaPendiente(trueque) }}
+                    </button>
+                    <button
+                      v-if="trueque.puede_confirmar"
+                      class="button button--primary button--small"
+                      type="button"
+                      :disabled="procesandoTruequeId === trueque.id"
+                      @click="confirmarFinalizacion(trueque)"
+                    >
+                      Confirmar finalización
+                    </button>
+                    <button
+                      v-if="trueque.pendiente_resena"
+                      class="button button--secondary button--small"
+                      type="button"
+                      @click="abrirResena(trueque)"
+                    >
+                      Dejar reseña
+                    </button>
+                  </div>
+                  <p
+                    v-if="feedbackTrueque[trueque.id]"
+                    :class="['alert', feedbackTruequeOk[trueque.id] ? 'alert--success' : 'alert--error']"
                   >
-                    {{ etiquetaPropuestaPendiente(trueque) }}
-                  </button>
-                  <button
-                    v-if="trueque.puede_confirmar"
-                    class="button button--primary button--small"
-                    type="button"
-                    :disabled="procesandoTruequeId === trueque.id"
-                    @click="confirmarFinalizacion(trueque)"
-                  >
-                    Confirmar finalización
-                  </button>
-                  <button
-                    v-if="trueque.pendiente_resena"
-                    class="button button--secondary button--small"
-                    type="button"
-                    @click="abrirResena(trueque)"
-                  >
-                    Dejar reseña
-                  </button>
-                </div>
-                <p
-                  v-if="feedbackTrueque[trueque.id]"
-                  :class="['alert', feedbackTruequeOk[trueque.id] ? 'alert--success' : 'alert--error']"
-                >
-                  {{ feedbackTrueque[trueque.id] }}
-                </p>
-              </article>
+                    {{ feedbackTrueque[trueque.id] }}
+                  </p>
+                </article>
+              </div>
             </div>
           </div>
 
@@ -260,6 +612,7 @@ const datosPerfil = ref(null)
 const cargando = ref(true)
 const error = ref('')
 const misTrueques = ref([])
+const misTruequesMultiples = ref([])
 const cargandoTrueques = ref(false)
 const procesandoTruequeId = ref(null)
 const feedbackTrueque = reactive({})
@@ -267,6 +620,13 @@ const feedbackTruequeOk = reactive({})
 const usuarioActualId = ref(null)
 const codigoIngresado = ref('')
 const mostrandoInputCodigo = ref(null)
+const codigoIngresadoPar1 = ref('')
+const codigoIngresadoPar2 = ref('')
+const codigoIngresadoPar3 = ref('')
+const mostrandoInputCodigoPar = ref(null)
+const mostrandoFormularioResena = ref(null)
+const resenaEstrellas = ref(5)
+const resenaComentario = ref('')
 
 const publicacionesActivas = computed(() => {
   if (!datosPerfil.value) return []
@@ -330,10 +690,17 @@ const cargarPerfil = async () => {
 const cargarMisTrueques = async () => {
   cargandoTrueques.value = true
   try {
-    const data = await userController.obtenerMisTrueques()
-    misTrueques.value = data.trueques || []
+    const [truequesData, truequesMultiplesData] = await Promise.all([
+      userController.obtenerMisTrueques(),
+      userController.obtenerMisTruequesMultiples(),
+    ])
+    console.log('Datos completos:', { truequesData, truequesMultiplesData })
+    console.log(`Trueques normales: ${truequesData.trueques.length}, Trueques múltiples: ${truequesMultiplesData.trueques_multiple.length}`)
+    misTrueques.value = truequesData.trueques || []
+    misTruequesMultiples.value = truequesMultiplesData.trueques_multiple || []
   } catch {
     misTrueques.value = []
+    misTruequesMultiples.value = []
   } finally {
     cargandoTrueques.value = false
   }
@@ -494,6 +861,115 @@ const getAvatarColor = () => {
 
 const refrescarVistaPerfil = async () => {
   await Promise.all([cargarPerfil(), cargarMisTrueques()])
+}
+
+  const aceptarTruequeMultiple = async (truequeMultiple) => {
+  procesandoTruequeId.value = truequeMultiple.id
+  try {
+    // Usar el método del controlador que existe: responderPropuestaMultiple
+    const resultado = await userController.responderPropuestaMultiple(truequeMultiple.id, 'aceptar')
+    alert(resultado.mensaje || resultado.message || 'Trueque múltiple aceptado')
+    await cargarMisTrueques()
+  } catch (err) {
+    alert(err.message || 'Error al aceptar trueque múltiple')
+  } finally {
+    procesandoTruequeId.value = null
+  }
+}
+
+const esEmisorPar = (truequeMultiple, parNum) => {
+  const uid = Number(usuarioActualId.value)
+  if (parNum === 1) return Number(truequeMultiple.emisor1) === uid
+  if (parNum === 2) return Number(truequeMultiple.emisor2) === uid
+  if (parNum === 3) return Number(truequeMultiple.emisor3) === uid
+  return false
+}
+
+const esReceptorPar = (truequeMultiple, parNum) => {
+  const uid = Number(usuarioActualId.value)
+  if (parNum === 1) return Number(truequeMultiple.receptor1) === uid
+  if (parNum === 2) return Number(truequeMultiple.receptor2) === uid
+  if (parNum === 3) return Number(truequeMultiple.receptor3) === uid
+  return false
+}
+
+const validarCodigoParMultiple = async (truequeMultiple, parNum) => {
+  let codigo = ''
+  if (parNum === 1) codigo = codigoIngresadoPar1.value
+  if (parNum === 2) codigo = codigoIngresadoPar2.value
+  if (parNum === 3) codigo = codigoIngresadoPar3.value
+
+  if (!codigo) {
+    feedbackTrueque[truequeMultiple.id] = 'Por favor ingresa el código de confirmación.'
+    feedbackTruequeOk[truequeMultiple.id] = false
+    return
+  }
+
+  procesandoTruequeId.value = truequeMultiple.id
+  feedbackTrueque[truequeMultiple.id] = ''
+  feedbackTruequeOk[truequeMultiple.id] = false
+
+  try {
+    const resultado = await userController.validarCodigoParMultiple(truequeMultiple.id, parNum, codigo)
+    feedbackTruequeOk[truequeMultiple.id] = true
+    feedbackTrueque[truequeMultiple.id] = resultado.message || 'Código validado correctamente.'
+
+    // Limpiar el código ingresado
+    if (parNum === 1) codigoIngresadoPar1.value = ''
+    if (parNum === 2) codigoIngresadoPar2.value = ''
+    if (parNum === 3) codigoIngresadoPar3.value = ''
+    mostrandoInputCodigoPar.value = null
+
+    await cargarPerfil()
+    await cargarMisTrueques()
+
+    if (hu4?.refrescarDatosHu4) {
+      await hu4.refrescarDatosHu4()
+    }
+  } catch (err) {
+    feedbackTrueque[truequeMultiple.id] = err.message || 'Código inválido.'
+  } finally {
+    procesandoTruequeId.value = null
+  }
+}
+
+const enviarResenaMultiple = async (truequeMultiple, calificadoId) => {
+  if (!resenaEstrellas.value || resenaEstrellas.value < 1 || resenaEstrellas.value > 5) {
+    feedbackTrueque[truequeMultiple.id] = 'Por selecciona una calificación entre 1 y 5 estrellas.'
+    feedbackTruequeOk[truequeMultiple.id] = false
+    return
+  }
+
+  procesandoTruequeId.value = truequeMultiple.id
+  feedbackTrueque[truequeMultiple.id] = ''
+  feedbackTruequeOk[truequeMultiple.id] = false
+
+  try {
+    const resultado = await userController.registrarResenaMultiple(
+      truequeMultiple.id,
+      calificadoId,
+      resenaEstrellas.value,
+      resenaComentario.value
+    )
+    feedbackTruequeOk[truequeMultiple.id] = true
+    feedbackTrueque[truequeMultiple.id] = resultado.mensaje || resultado.message || 'Reseña enviada correctamente.'
+
+    // Limpiar el formulario
+    resenaEstrellas.value = 5
+    resenaComentario.value = ''
+    mostrandoFormularioResena.value = null
+
+    await cargarPerfil()
+    await cargarMisTrueques()
+
+    if (hu4?.refrescarDatosHu4) {
+      await hu4.refrescarDatosHu4()
+    }
+  } catch (err) {
+    feedbackTrueque[truequeMultiple.id] = err.message || 'Error al enviar reseña.'
+  } finally {
+    procesandoTruequeId.value = null
+  }
 }
 
 onMounted(async () => {
@@ -855,5 +1331,30 @@ onUnmounted(() => {
   text-align: center;
   letter-spacing: 0.1rem;
   text-transform: uppercase;
+}
+
+.codigo-confirmacion-multiple {
+  padding: 1rem;
+  background: #f0f7ff;
+  border-radius: 8px;
+  border: 1px solid #b8daff;
+}
+
+.codigo-par-item {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.codigo-par-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.codigo-confirmado {
+  color: #28a745;
+  font-weight: bold;
+  margin-left: 0.5rem;
 }
 </style>

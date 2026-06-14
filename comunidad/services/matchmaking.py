@@ -18,15 +18,25 @@ class MatchmakingService(MatchmakingInterface):
         self.matches = []
 
     def obtener_matches(self, usuario):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Obteniendo matches para usuario {usuario.id} ({usuario.username})")
+
         titulos_necesidades = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
             usuario, "NECESIDAD"
         )
         titulos_talentos = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
             usuario, "TALENTO"
         )
+
+        logger.info(f"Usuario {usuario.id} - Necesidades activas: {titulos_necesidades}")
+        logger.info(f"Usuario {usuario.id} - Talentos activos: {titulos_talentos}")
+
         self.matches = self.matchmaking_repository.buscar_matches(
             usuario, titulos_necesidades, titulos_talentos
         )
+
+        logger.info(f"Matches encontrados para usuario {usuario.id}: {len(self.matches)}")
         return self.matches
 
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
@@ -192,12 +202,21 @@ class MatchmakingService(MatchmakingInterface):
         return None, None
 
     def detectar_y_notificar_matches(self, usuario):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Iniciando detección de matches para usuario {usuario.id} ({usuario.username})")
+        
         matches = self.obtener_matches(usuario)
+        logger.info(f"Se encontraron {len(matches)} matches para usuario {usuario.id}")
+        
         notificaciones_creadas = []
 
         for match in matches:
             otro_usuario = match["usuario"]
+            logger.info(f"Procesando match con usuario {otro_usuario.id} ({otro_usuario.username})")
+            
             if self.notificacion_repository.existe_match_entre(usuario, otro_usuario):
+                logger.info(f"Ya existe un match entre {usuario.id} y {otro_usuario.id}, se omite")
                 continue
 
             pub_emisor, pub_receptor = self._resolver_publicaciones_match_completo(match, usuario)
@@ -230,6 +249,7 @@ class MatchmakingService(MatchmakingInterface):
                 es_mutuo,
                 match,
             )
+            logger.info(f"Creando notificación MATCH para {usuario.id}: {mensaje_para_usuario}")
             notificaciones_creadas.append(
                 self.notificacion_repository.crear_notificacion(
                     destinatario=usuario,
@@ -249,6 +269,7 @@ class MatchmakingService(MatchmakingInterface):
                 es_mutuo,
                 match,
             )
+            logger.info(f"Creando notificación MATCH para {otro_usuario.id}: {mensaje_para_match}")
             notificaciones_creadas.append(
                 self.notificacion_repository.crear_notificacion(
                     destinatario=otro_usuario,
@@ -261,4 +282,5 @@ class MatchmakingService(MatchmakingInterface):
                 )
             )
 
+        logger.info(f"Detección de matches completada para usuario {usuario.id}. Notificaciones creadas: {len(notificaciones_creadas)}")
         return notificaciones_creadas

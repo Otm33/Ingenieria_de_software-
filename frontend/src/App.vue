@@ -101,7 +101,7 @@
         <Perfil v-else-if="seccionActiva === 'perfil'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
         <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
-        <AdminCSV v-else-if="usuarioActual.esStaff && seccionActiva === 'csv'" />
+        <AdminCSV v-else-if="(usuarioActual.esStaff || usuarioActual.esSuperusuario) && seccionActiva === 'csv'" />
         <Cartelera v-else />
       </template>
     </main>
@@ -408,6 +408,9 @@ const iniciarSesion = async () => {
 
   try {
     usuarioActual.value = await userController.iniciarSesion(loginForm)
+
+
+
     seccionActiva.value = 'cartelera'
     tipoRegistroActivo.value = ''
     loginForm.username = ''

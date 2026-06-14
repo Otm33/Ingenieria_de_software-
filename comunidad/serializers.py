@@ -301,8 +301,14 @@ class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
             return False
         if not obj.participante(request.user):
             return False
-        if obj.estado != 'PENDIENTE':
+        # Permitimos aceptar también si el trueque ya está en 'ACEPTADO' pero
+        # aún hay participantes que no han marcado su aceptación (caso raro
+        # consistente con correcciones retroactivas).
+        if obj.estado not in ('PENDIENTE', 'ACEPTADO'):
             return False
+        # Determinar el rol del usuario preferentemente por su posición de emisor
+        # (cada emisor representa un participante único). Si el flag del rol
+        # aún no está marcado, puede aceptar.
         rol = obj.obtener_usuario_por_rol(request.user)
         if rol == 1 and not obj.usuario1_aceptado:
             return True

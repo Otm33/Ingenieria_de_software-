@@ -83,11 +83,15 @@ class PublicacionRepository:
         ).order_by("-prioridad_urgencia", "-id")
 
     def titulos_activos_por_usuario_y_tipo(self, usuario, tipo):
-        return list(
+        import logging
+        logger = logging.getLogger(__name__)
+        titulos = list(
             Publicacion.objects.filter(usuario=usuario, tipo=tipo, esta_activa=True)
             .values_list("titulo", flat=True)
             .distinct()
         )
+        logger.warning(f"titulos_activos_por_usuario_y_tipo - usuario={usuario.id}, tipo={tipo}, titulos={titulos}")
+        return titulos
 
     def categorias_activas_por_usuario_y_tipo(self, usuario, tipo):
         return list(
