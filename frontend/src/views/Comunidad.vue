@@ -225,10 +225,13 @@
  * TEST M5 — Perfil / Cartelera sin regresiones
  */
 import { computed, inject, onMounted, ref, watch } from 'vue';
+import { useAuthStore } from '../stores/auth.js';
+import { useCarteleraStore } from '../stores/cartelera.js';
+import { useComunidadStore } from '../stores/comunidad.js';
 
-const authController = inject('authController');
-const carteleraController = inject('carteleraController');
-const comunidadController = inject('comunidadController');
+const authStore = useAuthStore();
+const carteleraStore = useCarteleraStore();
+const comunidadStore = useComunidadStore();
 const hu4 = inject('hu4', null);
 
 const AVATAR_COLORS = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
@@ -256,8 +259,8 @@ const sincronizarSesion = async () => {
     sesionLocalId.value = hu4.usuarioActualId.value
     return
   }
-  const sesion = await authController.obtenerSesionActual()
-  sesionLocalId.value = sesion?.id ?? null
+  const sesion = await authStore.obtenerSesionActual()
+  sesionLocalId.value = authStore.usuarioActual?.id ?? null
 };
 
 const talentosActivos = computed(() => {
@@ -302,7 +305,7 @@ const cargarComunidad = async () => {
   error.value = '';
 
   try {
-    const data = await comunidadController.obtenerComunidad();
+    const data = await comunidadStore.cargarComunidad();
     miembros.value = data.miembros || [];
   } catch (err) {
     error.value = err.message || 'No se pudo cargar el directorio de la comunidad.';
@@ -319,7 +322,7 @@ const verDetalle = async (miembro) => {
   detallePerfil.value = null;
 
   try {
-    detallePerfil.value = await comunidadController.obtenerPerfilUsuario(miembro.id);
+    detallePerfil.value = await comunidadStore.cargarPerfilUsuario(miembro.id);
   } catch (err) {
     errorDetalle.value = err.message || 'No se pudo cargar el perfil del miembro.';
   } finally {
@@ -348,7 +351,7 @@ const elegirModoPropuesta = async (modo) => {
 
   mostrarSelectorModo.value = false;
 
-  const misPublicaciones = await carteleraController.obtenerMisPublicaciones();
+  const misPublicaciones = await carteleraStore.cargarMisPublicaciones();
   const config = {
     receptorId: detallePerfil.value.usuario.id,
     receptorNombre: detallePerfil.value.nombre_real,

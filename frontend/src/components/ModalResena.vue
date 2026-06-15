@@ -65,7 +65,9 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'enviada'])
 
-const resenaController = inject('resenaController')
+import { useResenaStore } from '../stores/resena.js'
+
+const resenaStore = useResenaStore()
 const estrellas = ref(5)
 const comentario = ref('')
 const enviando = ref(false)
@@ -107,7 +109,7 @@ const enviar = async () => {
   error.value = ''
 
   try {
-    await resenaController.registrarResena(props.truequeId, estrellas.value, comentario.value.trim())
+    await resenaStore.registrarResena(props.truequeId, estrellas.value, comentario.value.trim())
     limpiarFormulario()
     emit('enviada')
     emit('update:visible', false)

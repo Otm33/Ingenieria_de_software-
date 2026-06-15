@@ -91,7 +91,9 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'creada'])
 
-const truequeController = inject('truequeController')
+import { useTruequeStore } from '../stores/trueque.js'
+
+const truequeStore = useTruequeStore()
 const publicacionEmisorId = ref('')
 const publicacionReceptorId = ref('')
 const enviando = ref(false)
@@ -233,7 +235,7 @@ const confirmar = async () => {
   error.value = ''
 
   try {
-    const resultado = await truequeController.crearPropuesta(
+    const resultado = await truequeStore.crearPropuesta(
       props.receptorId,
       publicacionEmisorId.value,
       publicacionReceptorId.value,

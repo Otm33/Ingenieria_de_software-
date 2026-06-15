@@ -17,12 +17,12 @@
           </button>
         </nav>
 
-        <nav v-if="usuarioActual?.esStaff || usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
+        <nav v-if="authStore.usuarioActual?.esStaff || authStore.usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
           <button class="nav__link" type="button" @click="seccionActiva = 'csv'">Usuarios CSV</button>
           <a class="nav__link" href="http://127.0.0.1:8000/admin/" target="_blank">Admin Django</a>
         </nav>
 
-        <div v-if="usuarioActual" class="session-box">
+        <div v-if="authStore.usuarioActual" class="session-box">
           <button
             class="nav__link nav__link--icon nav__link--notificaciones"
             type="button"
@@ -47,7 +47,7 @@
         <div class="loading-state">Verificando sesion...</div>
       </section>
 
-      <section v-else-if="!usuarioActual" class="auth-page">
+      <section v-else-if="!authStore.usuarioActual" class="auth-page">
         <section class="auth-panel">
           <div class="panel__header">
             <h2 class="panel__title">Iniciar sesion</h2>
@@ -103,9 +103,9 @@
         <Cartelera v-else-if="seccionActiva === 'publicar'" :modo-publicar="true" @volver-cartelera="seccionActiva = 'cartelera'" />
         <Perfil v-else-if="seccionActiva === 'perfil'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
-        <RedComercial v-else-if="seccionActiva === 'red-comercial'" :usuario-actual="usuarioActual" />
-        <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
-        <AdminCSV v-else-if="(usuarioActual.esStaff || usuarioActual.esSuperusuario) && seccionActiva === 'csv'" />
+        <RedComercial v-else-if="seccionActiva === 'red-comercial'" :usuario-actual="authStore.usuarioActual" />
+        <Register v-else-if="authStore.usuarioActual.esStaff && seccionActiva === 'registro'" />
+        <AdminCSV v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'csv'" />
         <Cartelera v-else />
       </template>
     </main>
@@ -142,7 +142,11 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, onMounted, provide, reactive, ref, watch } from 'vue'
+import { useAuthStore } from './stores/auth.js'
+import { useCarteleraStore } from './stores/cartelera.js'
+import { useComunidadStore } from './stores/comunidad.js'
+import { useTruequeStore } from './stores/trueque.js'
 import AdminCSV from './views/AdminCSV.vue'
 import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
@@ -153,14 +157,13 @@ import ModalNotificaciones from './components/ModalNotificaciones.vue'
 import ModalPropuesta from './components/ModalPropuesta.vue'
 import ModalResena from './components/ModalResena.vue'
 
-const authController = inject('authController')
-const carteleraController = inject('carteleraController')
-const comunidadController = inject('comunidadController')
-const truequeController = inject('truequeController')
-const usuarioActual = ref(null)
+const authStore = useAuthStore()
+const carteleraStore = useCarteleraStore()
+const comunidadStore = useComunidadStore()
+const truequeStore = useTruequeStore()
 const cargandoSesion = ref(true)
-const procesandoLogin = ref(false)
-const loginError = ref('')
+const procesandoLogin = computed(() => authStore.loading)
+const loginError = computed(() => authStore.error)
 const seccionActiva = ref('cartelera')
 const tipoRegistroActivo = ref('')
 const mensajeBienvenida = ref('')
@@ -208,8 +211,8 @@ const filtrarNotificacionesAccionables = (notificaciones) => (
 const notificacionesAccionables = computed(() => notificacionesVisibles.value)
 
 const obtenerContraparteNombre = (trueque) => {
-  if (!usuarioActual.value) return ''
-  if (Number(trueque.emisor) === Number(usuarioActual.value.id)) return trueque.receptor_nombre
+  if (!authStore.usuarioActual) return ''
+  if (Number(trueque.emisor) === Number(authStore.usuarioActual.id)) return trueque.receptor_nombre
   return trueque.emisor_nombre
 }
 
@@ -238,13 +241,13 @@ const revisarResenaPendiente = () => {
 
 const cargarDatosHu4 = async (opciones = {}) => {
   const { omitirModalesAutomaticos = false } = opciones
-  if (!usuarioActual.value) return
+  if (!authStore.usuarioActual) return
 
   try {
     const [notificacionesData, truequesData, misPublicaciones] = await Promise.all([
-      truequeController.obtenerNotificaciones(false),
-      truequeController.obtenerMisTrueques(),
-      carteleraController.obtenerMisPublicaciones(),
+      truequeStore.cargarNotificaciones(false),
+      truequeStore.obtenerMisTrueques(),
+      carteleraStore.cargarMisPublicaciones(),
     ])
 
     misTrueques.value = truequesData.trueques || []
@@ -270,7 +273,7 @@ const cargarDatosHu4 = async (opciones = {}) => {
 const abrirModalPropuesta = async (config) => {
   const misPublicaciones = config.misPublicaciones?.length
     ? config.misPublicaciones
-    : await carteleraController.obtenerMisPublicaciones()
+    : await carteleraStore.cargarMisPublicaciones()
 
   Object.assign(propuestaConfig, {
     receptorId: config.receptorId,
@@ -288,16 +291,16 @@ const abrirModalPropuesta = async (config) => {
 }
 
 const abrirModalPropuestaDesdeTrueque = async (trueque) => {
-  if (!usuarioActual.value || !trueque) return
+  if (!authStore.usuarioActual || !trueque) return
 
-  const soyEmisor = Number(trueque.emisor) === Number(usuarioActual.value.id)
+  const soyEmisor = Number(trueque.emisor) === Number(authStore.usuarioActual.id)
   const contraparteId = soyEmisor ? trueque.receptor : trueque.emisor
   const contraparteNombre = obtenerContraparteNombre(trueque)
-  const misPublicaciones = await carteleraController.obtenerMisPublicaciones()
+  const misPublicaciones = await carteleraStore.cargarMisPublicaciones()
   let publicacionesVecino = []
 
   try {
-    const perfil = await comunidadController.obtenerPerfilUsuario(contraparteId)
+    const perfil = await comunidadStore.cargarPerfilUsuario(contraparteId)
     publicacionesVecino = perfil.publicaciones || []
   } catch {
     publicacionesVecino = []
@@ -332,7 +335,7 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
 
   let publicacionesVecino = []
   try {
-    const perfil = await comunidadController.obtenerPerfilUsuario(notif.remitente_id)
+    const perfil = await comunidadStore.cargarPerfilUsuario(notif.remitente_id)
     publicacionesVecino = perfil.publicaciones || []
   } catch {
     publicacionesVecino = []
@@ -341,7 +344,7 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
   await abrirModalPropuesta({
     receptorId: notif.remitente_id,
     receptorNombre: notif.remitente_nombre,
-    misPublicaciones: await carteleraController.obtenerMisPublicaciones(),
+    misPublicaciones: await carteleraStore.cargarMisPublicaciones(),
     publicacionesVecino,
     truequeIdOrigen: notif.trueque_id || null,
   })
@@ -356,7 +359,7 @@ const onPropuestaCreada = async () => {
   const truequeId = propuestaConfig.truequeIdOrigen
   if (truequeId) {
     try {
-      await truequeController.marcarNotificacionesTruequeLeidas(truequeId)
+      await truequeStore.marcarNotificacionesTruequeLeidas(truequeId)
     } catch {
       // Ignorar errores al marcar notificaciones del match.
     }
@@ -396,13 +399,13 @@ provide('hu4', {
   registrarRefrescarPerfil,
   refrescarPerfil,
   misTrueques,
-  usuarioActualId: computed(() => usuarioActual.value?.id ?? null),
+  usuarioActualId: computed(() => authStore.usuarioActual?.id ?? null),
 })
 
 const cargarSesion = async () => {
   try {
-    usuarioActual.value = await authController.obtenerSesionActual()
-    if (usuarioActual.value) {
+    await authStore.obtenerSesionActual()
+    if (authStore.usuarioActual) {
       await cargarDatosHu4()
     }
   } finally {
@@ -415,9 +418,7 @@ const iniciarSesion = async () => {
   loginError.value = ''
 
   try {
-    usuarioActual.value = await authController.iniciarSesion(loginForm)
-
-
+    await authStore.iniciarSesion(loginForm)
 
     seccionActiva.value = 'cartelera'
     tipoRegistroActivo.value = ''
@@ -434,8 +435,10 @@ const iniciarSesion = async () => {
 const iniciarSesionDespuesDeRegistro = async (credenciales) => {
   try {
     if (credenciales.esNuevoMiembro) {
-      usuarioActual.value = await authController.obtenerSesionActual()
-        || await authController.iniciarSesion(credenciales)
+      await authStore.obtenerSesionActual()
+      if (!authStore.usuarioActual) {
+        await authStore.iniciarSesion(credenciales)
+      }
       mensajeBienvenida.value = '¡Bienvenido, Miembro Activo! Tu perfil y primer talento ya están publicados en la comunidad.'
       seccionActiva.value = 'perfil'
       tipoRegistroActivo.value = ''
@@ -462,8 +465,7 @@ const mostrarRegistroComercio = () => {
 }
 
 const cerrarSesion = async () => {
-  await authController.cerrarSesion()
-  usuarioActual.value = null
+  await authStore.cerrarSesion()
   seccionActiva.value = 'cartelera'
   notificacionesVisibles.value = []
   misTrueques.value = []
@@ -473,7 +475,7 @@ const cerrarSesion = async () => {
 }
 
 watch(seccionActiva, async (nueva) => {
-  if (usuarioActual.value && ['perfil', 'comunidad', 'cartelera'].includes(nueva)) {
+  if (authStore.usuarioActual && ['perfil', 'comunidad', 'cartelera'].includes(nueva)) {
     await cargarDatosHu4()
   }
 })

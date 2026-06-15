@@ -170,7 +170,9 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useAuthStore } from '../stores/auth.js';
+import { useCarteleraStore } from '../stores/cartelera.js';
 import { CATEGORIAS, titulosParaCategoria } from '../data/catalogoServicios.js';
 
 const props = defineProps({
@@ -182,8 +184,8 @@ const props = defineProps({
 
 const emit = defineEmits(['registered']);
 
-const authController = inject('authController');
-const carteleraController = inject('carteleraController');
+const authStore = useAuthStore();
+const carteleraStore = useCarteleraStore();
 const pasos = ['Correo', 'Credenciales', 'Perfil y talento'];
 const pasoActual = ref(1);
 const form = ref({
@@ -261,7 +263,7 @@ const validarEmailPaso1 = async () => {
   registroExitoso.value = false;
 
   try {
-    await authController.validarEmail(form.value.email, props.esComercio);
+    await authStore.validarEmail(form.value.email, props.esComercio);
     pasoActual.value = 2;
   } catch (err) {
     feedback.value = err.message || 'El correo no esta autorizado para esta comunidad.';
@@ -276,7 +278,7 @@ const ejecutarRegistroCompleto = async () => {
   registroExitoso.value = false;
 
   try {
-    await authController.registrarUsuario({
+    await authStore.registrarUsuario({
       nombre_real: form.value.nombre_real,
       email: form.value.email,
       username: form.value.username,
@@ -285,12 +287,12 @@ const ejecutarRegistroCompleto = async () => {
       es_comercio: props.esComercio,
     });
 
-    await authController.iniciarSesion({
+    await authStore.iniciarSesion({
       username: form.value.username,
       password: form.value.password,
     });
 
-    await carteleraController.crearPublicacionDesdeDatos({
+    await carteleraStore.crearPublicacion({
       tipo: 'TALENTO',
       titulo: form.value.titulo,
       descripcion: form.value.descripcion,

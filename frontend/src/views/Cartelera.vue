@@ -111,7 +111,7 @@
         <h3 class="panel__title">Mis Publicaciones</h3>
       </div>
       <div class="panel__body">
-        <div v-if="cargandoMisPublicaciones" class="loading-state">Cargando mis publicaciones...</div>
+        <div v-if="carteleraStore.loading" class="loading-state">Cargando mis publicaciones...</div>
         <template v-else>
           <p
             v-if="feedbackEstadoPublicacion"
@@ -120,9 +120,9 @@
             {{ feedbackEstadoPublicacion }}
           </p>
 
-          <div v-if="misPublicaciones.length" class="service-grid">
+          <div v-if="carteleraStore.misPublicaciones.length" class="service-grid">
           <article
-            v-for="pub in misPublicaciones"
+            v-for="pub in carteleraStore.misPublicaciones"
             :key="pub.id"
             :class="['service-card', clasePorUrgencia(pub.urgencia), { 'service-card--pausada': !pub.esta_activa }]"
           >
@@ -298,6 +298,10 @@
 import { computed, inject, onMounted, reactive, ref, toRefs, watch } from 'vue';
 import { CATEGORIAS, titulosParaCategoria } from '../data/catalogoServicios.js';
 import ModalConfirmacion from '../components/ModalConfirmacion.vue';
+import { useAuthStore } from '../stores/auth.js';
+import { useCarteleraStore } from '../stores/cartelera.js';
+import { useComunidadStore } from '../stores/comunidad.js';
+import { useTruequeStore } from '../stores/trueque.js';
 
 const props = defineProps({
   modoPublicar: {
@@ -311,13 +315,12 @@ const emit = defineEmits(['volver-cartelera']);
 // Desestructurar props para usar en el template
 const { modoPublicar } = toRefs(props);
 
-const authController = inject('authController');
-const carteleraController = inject('carteleraController');
-const comunidadController = inject('comunidadController');
-const truequeController = inject('truequeController');
+const authStore = useAuthStore();
+const carteleraStore = useCarteleraStore();
+const comunidadStore = useComunidadStore();
+const truequeStore = useTruequeStore();
 const hu4 = inject('hu4', null);
 const publicaciones = ref([]);
-const misPublicaciones = ref([]);
 const usuarioActualId = ref(null);
 const filtroCategoria = ref('');
 const filtroEmergenciaAlta = ref(false);
@@ -325,7 +328,6 @@ const filtroNecesidadCritica = ref(false);
 const filtrosActivos = ref(false);
 const publicacionSeleccionadaId = ref(null);
 const cargando = ref(false);
-const cargandoMisPublicaciones = ref(false);
 const errorFiltro = ref('');
 const publicando = ref(false);
 const feedbackPublicacion = ref('');
@@ -383,14 +385,10 @@ const cargarMisPublicaciones = async () => {
     return;
   }
 
-  cargandoMisPublicaciones.value = true;
   try {
-    const resultado = await carteleraController.obtenerMisPublicaciones();
-    misPublicaciones.value = Array.isArray(resultado) ? resultado : [];
+    await carteleraStore.cargarMisPublicaciones();
   } catch {
-    misPublicaciones.value = [];
-  } finally {
-    cargandoMisPublicaciones.value = false;
+    // Error handling in store
   }
 };
 
@@ -420,7 +418,7 @@ const obtenerPublicaciones = async (conFiltros = false) => {
       publicacionSeleccionadaId.value = null;
     }
 
-    const todasPublicaciones = await carteleraController.obtenerCartelera(params);
+    const todasPublicaciones = await carteleraStore.cargarCartelera(params);
     publicaciones.value = todasPublicaciones.filter((pub) => pub.usuario !== usuarioActualId.value);
   } catch (err) {
     errorFiltro.value = 'No se pudo cargar la cartelera. Verifica que el backend esté activo.';
@@ -466,8 +464,8 @@ const verCoincidencias = async () => {
   coincidenciasExitosas.value = false;
 
   try {
-    const coincidencia = await truequeController.verificarCoincidenciaPorTitulo(pub.id);
-    const { matches } = await truequeController.obtenerMatchesEnriquecidos(pub.id);
+    const coincidencia = await truequeStore.verificarCoincidenciaPorTitulo(pub.id);
+    const { matches } = await truequeStore.obtenerMatches(pub.id);
 
     if (!coincidencia.tiene_coincidencia && !matches.length) {
       feedbackCoincidencias.value = 'No se encontraron coincidencias por título para esta publicación.';
@@ -476,12 +474,12 @@ const verCoincidencias = async () => {
 
     const tipoVecino = pub.tipo;
     const tipoMi = pub.tipo === 'TALENTO' ? 'NECESIDAD' : 'TALENTO';
-    const misPublicaciones = await carteleraController.obtenerMisPublicaciones();
+    const misPublicaciones = await carteleraStore.cargarMisPublicaciones();
 
     if (matches.length) {
       const match = matches[0];
       const sugerencia = match?.publicacionesSugeridas?.[0];
-      const perfilVecino = await comunidadController.obtenerPerfilUsuario(match.usuario.id);
+      const perfilVecino = await comunidadStore.cargarPerfilUsuario(match.usuario.id);
 
       await hu4.abrirModalPropuesta({
         receptorId: match.usuario.id,
@@ -494,7 +492,7 @@ const verCoincidencias = async () => {
         publicacionReceptorId: sugerencia?.su_pub_id || pub.id,
       });
     } else {
-      const perfilVecino = await comunidadController.obtenerPerfilUsuario(pub.usuario);
+      const perfilVecino = await comunidadStore.cargarPerfilUsuario(pub.usuario);
 
       await hu4.abrirModalPropuesta({
         receptorId: pub.usuario,
@@ -563,12 +561,13 @@ const confirmarCambioEstado = async () => {
   feedbackEstadoExitoso.value = false;
 
   try {
-    await carteleraController.actualizarEstadoPublicacion(publicacion.id, reactivar);
+    await carteleraStore.actualizarEstadoPublicacion(publicacion.id, reactivar);
     feedbackEstadoExitoso.value = true;
     feedbackEstadoPublicacion.value = reactivar
       ? '✅ Publicación reactivada correctamente. Ahora es visible en la cartelera.'
       : '✅ Publicación pausada correctamente. Ya no aparece en la cartelera pública.';
-    await cargarMisPublicaciones();
+    // Force refresh to get updated state from API
+    await carteleraStore.cargarMisPublicaciones(true);
     await obtenerPublicaciones(false);
   } catch (err) {
     feedbackEstadoPublicacion.value = err.message || 'No se pudo actualizar el estado de la publicación.';
@@ -583,7 +582,7 @@ const publicarServicio = async () => {
   publicacionExitosa.value = false;
 
   try {
-    const nuevaPublicacion = await carteleraController.crearPublicacionDesdeDatos({ ...formPublicacion });
+    const nuevaPublicacion = await carteleraStore.crearPublicacion(authStore, formPublicacion);
     publicacionExitosa.value = true;
     feedbackPublicacion.value = 'Publicación creada correctamente.';
     
@@ -623,9 +622,9 @@ const etiquetaUrgencia = (urgencia) => {
 const estrellas = (valor) => Number(valor || 5).toFixed(1);
 
 onMounted(async () => {
-  const sesion = await authController.obtenerSesionActual();
-  if (sesion) {
-    usuarioActualId.value = sesion.id;
+  await authStore.obtenerSesionActual();
+  if (authStore.usuarioActual) {
+    usuarioActualId.value = authStore.usuarioActual.id;
   }
 
   await obtenerPublicaciones(false);

@@ -69,10 +69,12 @@
 
 <script setup>
 import { inject, ref } from 'vue';
+import { useAuthStore } from '../stores/auth.js';
+import { useAdminStore } from '../stores/admin.js';
 
-// CAMBIO VISTA: la vista delega la persistencia CSV al controlador instanciado.
-const authController = inject('authController');
-const adminController = inject('adminController');
+// CAMBIO VISTA: la vista delega la persistencia CSV al store.
+const authStore = useAuthStore();
+const adminStore = useAdminStore();
 const archivo = ref(null);
 const mensaje = ref('');
 const error = ref('');
@@ -110,8 +112,8 @@ const subirArchivo = async () => {
   procesando.value = true;
 
   try {
-    // CAMBIO VISTA: el archivo pasa por controlador -> servicio -> API Django -> BD.
-    const response = await adminController.cargarArchivoDirecto(archivo.value, authController);
+    // CAMBIO VISTA: el archivo pasa por store -> servicio -> API Django -> BD.
+    const response = await adminStore.cargarArchivoDirecto(archivo.value, authStore);
     mensaje.value = response.mensaje || response.message || 'Archivo procesado correctamente.';
   } catch (err) {
     error.value = err.message || 'Error al procesar el archivo.';

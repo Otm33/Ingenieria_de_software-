@@ -605,10 +605,13 @@
 
 <script setup>
 import { computed, inject, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useAuthStore } from '../stores/auth.js'
+import { usePerfilStore } from '../stores/perfil.js'
+import { useTruequeStore } from '../stores/trueque.js'
 
-const authController = inject('authController')
-const perfilController = inject('perfilController')
-const truequeController = inject('truequeController')
+const authStore = useAuthStore()
+const perfilStore = usePerfilStore()
+const truequeStore = useTruequeStore()
 const hu4 = inject('hu4', null)
 const datosPerfil = ref(null)
 const cargando = ref(true)
@@ -680,7 +683,7 @@ const nombreCalificador = (resena) => {
 
 const cargarPerfil = async () => {
   try {
-    const response = await perfilController.obtenerMiPerfil()
+    const response = await perfilStore.cargarMiPerfil()
     datosPerfil.value = response
   } catch (err) {
     error.value = 'Error al cargar el perfil: ' + (err.message || 'Error desconocido')
@@ -693,8 +696,8 @@ const cargarMisTrueques = async () => {
   cargandoTrueques.value = true
   try {
     const [truequesData, truequesMultiplesData] = await Promise.all([
-      truequeController.obtenerMisTrueques(),
-      truequeController.obtenerMisTruequesMultiples(),
+      truequeStore.obtenerMisTrueques(),
+      truequeStore.obtenerMisTruequesMultiples(),
     ])
     console.log('Datos completos:', { truequesData, truequesMultiplesData })
     console.log(`Trueques normales: ${truequesData.trueques.length}, Trueques múltiples: ${truequesMultiplesData.trueques_multiple.length}`)
@@ -768,7 +771,7 @@ const confirmarFinalizacion = async (trueque) => {
   feedbackTruequeOk[trueque.id] = false
 
   try {
-    const resultado = await perfilController.finalizarTrueque(trueque.id, authController)
+    const resultado = await perfilStore.finalizarTrueque(trueque.id, authStore)
     feedbackTruequeOk[trueque.id] = true
     feedbackTrueque[trueque.id] = resultado.message || 'Confirmación registrada.'
     await cargarPerfil()
@@ -805,7 +808,7 @@ const validarCodigo = async (trueque) => {
   feedbackTruequeOk[trueque.id] = false
 
   try {
-    const resultado = await truequeController.validarCodigoTrueque(trueque.id, codigoIngresado.value)
+    const resultado = await truequeStore.validarCodigoTrueque(trueque.id, codigoIngresado.value)
     feedbackTruequeOk[trueque.id] = true
     feedbackTrueque[trueque.id] = resultado.message || 'Código validado correctamente.'
     codigoIngresado.value = ''
@@ -868,8 +871,8 @@ const refrescarVistaPerfil = async () => {
   const aceptarTruequeMultiple = async (truequeMultiple) => {
   procesandoTruequeId.value = truequeMultiple.id
   try {
-    // Usar el método del controlador que existe: responderPropuestaMultiple
-    const resultado = await truequeController.responderPropuestaMultiple(truequeMultiple.id, 'aceptar')
+    // Usar el método del store que existe: responderPropuestaMultiple
+    const resultado = await truequeStore.responderPropuestaMultiple(truequeMultiple.id, 'aceptar')
     alert(resultado.mensaje || resultado.message || 'Trueque múltiple aceptado')
     await cargarMisTrueques()
   } catch (err) {
@@ -912,7 +915,7 @@ const validarCodigoParMultiple = async (truequeMultiple, parNum) => {
   feedbackTruequeOk[truequeMultiple.id] = false
 
   try {
-    const resultado = await truequeController.validarCodigoParMultiple(truequeMultiple.id, parNum, codigo)
+    const resultado = await truequeStore.validarCodigoParMultiple(truequeMultiple.id, parNum, codigo)
     feedbackTruequeOk[truequeMultiple.id] = true
     feedbackTrueque[truequeMultiple.id] = resultado.message || 'Código validado correctamente.'
 
@@ -947,7 +950,7 @@ const enviarResenaMultiple = async (truequeMultiple, calificadoId) => {
   feedbackTruequeOk[truequeMultiple.id] = false
 
   try {
-    const resultado = await truequeController.registrarResenaMultiple(
+    const resultado = await truequeStore.registrarResenaMultiple(
       truequeMultiple.id,
       calificadoId,
       resenaEstrellas.value,
@@ -975,8 +978,8 @@ const enviarResenaMultiple = async (truequeMultiple, calificadoId) => {
 }
 
 onMounted(async () => {
-  const sesion = await authController.obtenerSesionActual()
-  usuarioActualId.value = sesion?.id ?? null
+  await authStore.obtenerSesionActual()
+  usuarioActualId.value = authStore.usuarioActual?.id ?? null
   if (hu4?.registrarRefrescarPerfil) {
     hu4.registrarRefrescarPerfil(refrescarVistaPerfil)
   }

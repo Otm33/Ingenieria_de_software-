@@ -346,14 +346,12 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, reactive, ref } from 'vue'
-import ComercioController from '../controllers/ComercioController.js'
-import ComercioRepository from '../repositories/ComercioRepository.js'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useAuthStore } from '../stores/auth.js'
+import { useComercioStore } from '../stores/comercio.js'
 
-const authController = inject('authController')
-
-const repository = new ComercioRepository()
-const controller = new ComercioController(repository)
+const authStore = useAuthStore()
+const comercioStore = useComercioStore()
 
 const AVATAR_COLORS = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140']
 
@@ -501,9 +499,9 @@ const cargarDatos = async () => {
 
   try {
     const [catalogo, saldo, sesion] = await Promise.all([
-      controller.obtenerComercios(),
-      controller.obtenerMiSaldoComercial(),
-      authController.obtenerSesionActual(),
+      comercioStore.obtenerComercios(),
+      comercioStore.obtenerMiSaldoComercial(),
+      authStore.obtenerSesionActual(),
     ])
 
     comercios.value = catalogo.comercios || []
@@ -521,7 +519,7 @@ const cargarDatos = async () => {
     movimientosComercio.value = saldo?.movimientosComoComercio || []
 
     if (esComercio.value) {
-      const listaClientes = await controller.obtenerClientes()
+      const listaClientes = await comercioStore.obtenerClientes()
       clientes.value = listaClientes.clientes || []
     } else {
       clientes.value = []
@@ -550,7 +548,7 @@ const emitirVuelto = async () => {
   comprobanteEmision.value = null
 
   try {
-    const respuesta = await controller.emitirVuelto(
+    const respuesta = await comercioStore.emitirVuelto(
       formEmision.clienteId,
       formEmision.valorProducto,
       formEmision.montoRecibido,
@@ -581,7 +579,7 @@ const pagarConSaldo = async () => {
   resultadoPago.value = null
 
   try {
-    const respuesta = await controller.pagarConSaldo(formPago.comercioId, formPago.monto)
+    const respuesta = await comercioStore.pagarConSaldo(formPago.comercioId, formPago.monto)
     resultadoPago.value = {
       message: respuesta?.message || 'Pago procesado correctamente.',
       comprobante: respuesta?.comprobante || null,
