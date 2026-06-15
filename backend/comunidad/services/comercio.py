@@ -19,16 +19,15 @@ class ComercioService(ComercioInterface):
             raise BusinessError("Solo comercios activos pueden emitir saldos comerciales.", status_code=403)
 
         cliente_id = datos.get("cliente_id")
-        monto = self._obtener_monto(datos.get("monto_excedente"))
-        valor_producto = datos.get("valor_producto")
-        monto_recibido = datos.get("monto_recibido")
-
         if not cliente_id:
             raise BusinessError("Faltan datos.")
 
         # Validar que no se emita vuelto a sí mismo
         if int(cliente_id) == comercio.id:
             raise BusinessError("Un comercio no puede emitir vuelto a sí mismo.")
+
+        # Resolver el excedente usando el nuevo método
+        monto, valor_producto, monto_recibido = self._resolver_excedente_emision(datos)
 
         # Usar método de negocio de Usuario para validar saldo comercial
         puede_emitir, mensaje = comercio.puede_emitir_vuelto_comercial(monto)
@@ -109,10 +108,26 @@ class ComercioService(ComercioInterface):
         # Filtrar usando método de negocio de Usuario para asegurar que sean comercios activos
         return [c for c in comercios if c.es_comercio_activo()]
 
-    def listar_clientes(self):
+    def listar_clientes(self, termino_busqueda=None):
         # Listar usuarios que no son comercios
         from ..models import Usuario
-        return list(Usuario.objects.filter(es_comercio=False, is_active=True))
+        from django.db.models import Q
+
+        clientes = Usuario.objects.filter(
+            es_comercio=False,
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        ).order_by('nombre_real', 'username')
+
+        if termino_busqueda:
+            termino = str(termino_busqueda).strip()
+            if termino:
+                clientes = clientes.filter(
+                    Q(nombre_real__icontains=termino) | Q(username__icontains=termino)
+                )
+
+        return list(clientes)
 
     def _obtener_monto(self, valor):
         if valor in [None, ""]:
@@ -127,3 +142,49 @@ class ComercioService(ComercioInterface):
             raise BusinessError("El monto debe ser mayor a cero.")
 
         return monto
+
+    def _obtener_monto_no_negativo(self, valor, etiqueta):
+        if valor in [None, ""]:
+            raise BusinessError("Faltan datos.")
+
+        try:
+            monto = Decimal(str(valor))
+        except (InvalidOperation, ValueError):
+            raise BusinessError(f"El {etiqueta} no es valido.")
+
+        if monto < Decimal("0"):
+            raise BusinessError(f"El {etiqueta} no puede ser negativo.")
+
+        return monto
+
+    def _resolver_excedente_emision(self, datos):
+        valor_producto = datos.get("valor_producto")
+        monto_recibido = datos.get("monto_recibido")
+        monto_excedente = datos.get("monto_excedente")
+
+        if valor_producto not in [None, ""] and monto_recibido not in [None, ""]:
+            valor = self._obtener_monto(valor_producto)
+            recibido = self._obtener_monto_no_negativo(monto_recibido, "monto recibido")
+
+            if recibido <= valor:
+                raise BusinessError(
+                    "El monto recibido debe ser mayor al valor del producto para emitir vuelto."
+                )
+
+            excedente = recibido - valor
+            if excedente <= Decimal("0"):
+                raise BusinessError("El excedente debe ser mayor a cero para emitir vuelto.")
+
+            if monto_excedente not in [None, ""]:
+                excedente_declarado = self._obtener_monto(monto_excedente)
+                if excedente_declarado != excedente:
+                    raise BusinessError(
+                        "El monto excedente no coincide con monto recibido menos valor del producto."
+                    )
+
+            return excedente, valor, recibido
+
+        if monto_excedente not in [None, ""]:
+            return self._obtener_monto(monto_excedente), None, None
+
+        raise BusinessError("Faltan datos.")

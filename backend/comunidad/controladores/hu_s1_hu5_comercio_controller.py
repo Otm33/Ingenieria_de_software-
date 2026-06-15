@@ -62,7 +62,11 @@ class ComercioController:
         }
 
     def listar_comercios(self) -> list:
-        return self._comercio_service.listar_comercios()
+        from ..serializers import UsuarioSerializer
+        comercios = self._comercio_service.listar_comercios()
+        return UsuarioSerializer(comercios, many=True).data
 
-    def listar_clientes(self) -> list:
-        return self._comercio_service.listar_clientes()
+    def listar_clientes(self, termino_busqueda: str = None) -> list:
+        from ..serializers import UsuarioSerializer
+        clientes = self._comercio_service.listar_clientes(termino_busqueda)
+        return UsuarioSerializer(clientes, many=True).data

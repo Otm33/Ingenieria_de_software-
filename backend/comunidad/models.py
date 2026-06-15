@@ -96,6 +96,7 @@ class Publicacion(models.Model):
     categoria = models.CharField(max_length=80, db_index=True)
     urgencia = models.CharField(max_length=10, choices=URGENCIA_CHOICES, default='NORMAL', db_index=True)
     esta_activa = models.BooleanField(default=True)
+    es_causa_social = models.BooleanField(default=False)
 
     # Métodos de negocio ligeros para compatibilidad con servicios
     def es_talento(self) -> bool:

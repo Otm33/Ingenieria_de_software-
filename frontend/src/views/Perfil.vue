@@ -548,7 +548,7 @@
                   </div>
                   <div class="trueque-card__actions">
                     <button
-                      v-if="trueque.estado === 'PENDIENTE'"
+                      v-if="trueque.estado === 'PENDIENTE' && (!trueque.publicacion_emisor || !trueque.publicacion_receptor)"
                       class="button button--primary button--small"
                       type="button"
                       @click="completarPropuesta(trueque)"
@@ -982,6 +982,9 @@ onMounted(async () => {
   usuarioActualId.value = authStore.usuarioActual?.id ?? null
   if (hu4?.registrarRefrescarPerfil) {
     hu4.registrarRefrescarPerfil(refrescarVistaPerfil)
+  }
+  if (hu4?.registrarResenaEnviada) {
+    hu4.registrarResenaEnviada(refrescarVistaPerfil)
   }
   await refrescarVistaPerfil()
 })

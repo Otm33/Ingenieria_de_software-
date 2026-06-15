@@ -217,9 +217,14 @@ const obtenerContraparteNombre = (trueque) => {
 }
 
 let refrescarPerfilFn = null
+let resenaEnviadaFn = null
 
 const registrarRefrescarPerfil = (fn) => {
   refrescarPerfilFn = fn
+}
+
+const registrarResenaEnviada = (fn) => {
+  resenaEnviadaFn = fn
 }
 
 const refrescarPerfil = async () => {
@@ -373,6 +378,9 @@ const onResenaEnviada = async () => {
   truequeResena.value = null
   await cargarDatosHu4()
   await refrescarPerfil()
+  if (resenaEnviadaFn) {
+    await resenaEnviadaFn()
+  }
 }
 
 const abrirModalResena = (trueque) => {
@@ -397,6 +405,7 @@ provide('hu4', {
   abrirModalResenaPrioritario,
   refrescarDatosHu4: cargarDatosHu4,
   registrarRefrescarPerfil,
+  registrarResenaEnviada,
   refrescarPerfil,
   misTrueques,
   usuarioActualId: computed(() => authStore.usuarioActual?.id ?? null),

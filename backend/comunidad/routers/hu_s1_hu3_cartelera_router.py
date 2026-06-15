@@ -20,8 +20,7 @@ class CarteleraRouter(APIView):
     def get(self, request):
         try:
             categoria = request.query_params.get("categoria")
-            urgencias_str = request.query_params.get("urgencias")
-            urgencias = urgencias_str.split(",") if urgencias_str else None
+            urgencias = request.query_params.getlist("urgencia") or None
 
             controlador = CarteleraController(publicacion_repository=PublicacionRepository())
             resultado = controlador.obtener_cartelera(categoria=categoria, urgencias=urgencias)

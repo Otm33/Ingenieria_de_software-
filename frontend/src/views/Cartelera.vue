@@ -124,15 +124,15 @@
           <article
             v-for="pub in carteleraStore.misPublicaciones"
             :key="pub.id"
-            :class="['service-card', clasePorUrgencia(pub.urgencia), { 'service-card--pausada': !pub.esta_activa }]"
+            :class="['service-card', clasePorUrgencia(pub.urgencia), { 'service-card--pausada': !pub.estaActiva }]"
           >
             <div class="service-card__top">
               <div>
                 <span :class="['badge', pub.tipo === 'TALENTO' ? 'badge--talento' : 'badge--necesidad']">
                   {{ etiquetaTipo(pub.tipo) }}
                 </span>
-                <span :class="['badge', pub.esta_activa ? 'badge--activa' : 'badge--pausada']">
-                  {{ pub.esta_activa ? 'Activa' : 'Pausada' }}
+                <span :class="['badge', pub.estaActiva ? 'badge--activa' : 'badge--pausada']">
+                  {{ pub.estaActiva ? 'Activa' : 'Pausada' }}
                 </span>
                 <h3 class="service-card__title">{{ pub.titulo }}</h3>
               </div>
@@ -142,7 +142,7 @@
             <div class="service-card__footer">
               <span>{{ pub.categoria }}</span>
               <button
-                :class="['button', 'button--small', pub.esta_activa ? 'button--secondary' : 'button--primary']"
+                :class="['button', 'button--small', pub.estaActiva ? 'button--secondary' : 'button--primary']"
                 type="button"
                 :disabled="procesandoEstadoId === pub.id"
                 @click="actualizarEstadoPublicacion(pub)"
@@ -150,7 +150,7 @@
                 {{
                   procesandoEstadoId === pub.id
                     ? 'Procesando...'
-                    : (pub.esta_activa ? 'Pausar' : 'Reactivar')
+                    : (pub.estaActiva ? 'Pausar' : 'Reactivar')
                 }}
               </button>
             </div>
@@ -528,7 +528,7 @@ const volverACartelera = () => {
 };
 
 const actualizarEstadoPublicacion = (publicacion) => {
-  const reactivar = !publicacion.esta_activa;
+  const reactivar = !publicacion.estaActiva;
   datosModalConfirmacion.value = {
     titulo: reactivar ? 'Reactivar publicación' : 'Pausar publicación',
     mensaje: reactivar

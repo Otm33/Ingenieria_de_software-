@@ -109,12 +109,18 @@ const enviar = async () => {
   error.value = ''
 
   try {
-    await resenaStore.registrarResena(props.truequeId, estrellas.value, comentario.value.trim())
+    await resenaStore.registrarResenaDirecta(props.truequeId, estrellas.value, comentario.value.trim())
     limpiarFormulario()
     emit('enviada')
     emit('update:visible', false)
   } catch (err) {
     error.value = err.message || 'No se pudo registrar la reseña.'
+    // Si el error es porque ya existe una reseña, cerrar el modal y emitir el evento para recargar datos
+    if (err.message && err.message.includes('Ya has dejado una reseña')) {
+      limpiarFormulario()
+      emit('enviada')
+      emit('update:visible', false)
+    }
   } finally {
     enviando.value = false
   }

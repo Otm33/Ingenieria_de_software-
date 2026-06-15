@@ -99,7 +99,8 @@ class ClientesRouter(APIView):
 
     def get(self, request):
         try:
-            resultado = _controlador().listar_clientes()
+            termino_busqueda = request.query_params.get('q', None)
+            resultado = _controlador().listar_clientes(termino_busqueda)
             return Response({"clientes": resultado}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -91,10 +91,11 @@ export const useComercioStore = defineStore('comercio', () => {
   async function obtenerComercios() {
     loading.value = true
     error.value = null
-    
+
     try {
       const data = await comercioApiService.obtenerComercios()
-      const comerciosData = (Array.isArray(data) ? data : []).map((comercio) => _mapComercio(comercio))
+      const comerciosArray = Array.isArray(data) ? data : (data?.comercios || [])
+      const comerciosData = comerciosArray.map((comercio) => _mapComercio(comercio))
 
       comercios.value = comerciosData
 
@@ -113,10 +114,11 @@ export const useComercioStore = defineStore('comercio', () => {
   async function obtenerClientes(termino = '') {
     loading.value = true
     error.value = null
-    
+
     try {
       const data = await comercioApiService.obtenerClientes(termino)
-      const clientesData = (Array.isArray(data) ? data : []).map((cliente) => _mapCliente(cliente))
+      const clientesArray = Array.isArray(data) ? data : (data?.clientes || [])
+      const clientesData = clientesArray.map((cliente) => _mapCliente(cliente))
 
       clientes.value = clientesData
 
