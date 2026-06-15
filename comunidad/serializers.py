@@ -1,6 +1,15 @@
 from rest_framework import serializers
 
-from .models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, SaldoComercial, Usuario
+from .models import (
+    AcuerdoTrueque,
+    DonacionHoras,
+    NotificacionPropuesta,
+    Publicacion,
+    Resena,
+    SaldoComercial,
+    SolicitudApoyoSocial,
+    Usuario,
+)
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -16,6 +25,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
             "horas_de_vida",
             "promedio_estrellas",
             "es_comercio",
+            "estado_social",
             "is_staff",
             "is_superuser",
         ]
@@ -257,4 +267,83 @@ class SaldoComercialSerializer(serializers.ModelSerializer):
             "tipo_movimiento",
             "fecha",
             "fecha_expiracion",
+        ]
+
+
+class SolicitudApoyoSocialSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.CharField(source="solicitante.nombre_real", read_only=True)
+    estado_social_solicitante = serializers.CharField(source="solicitante.estado_social", read_only=True)
+    necesidad_activa = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SolicitudApoyoSocial
+        fields = [
+            "id",
+            "solicitante",
+            "solicitante_nombre",
+            "categoria",
+            "titulo",
+            "descripcion",
+            "estado",
+            "horas_recibidas",
+            "horas_solidarias_disponibles",
+            "horas_solidarias_utilizadas",
+            "publicacion_id",
+            "necesidad_activa",
+            "estado_social_solicitante",
+            "creado_el",
+            "actualizado_el",
+        ]
+        read_only_fields = [
+            "id",
+            "solicitante",
+            "estado",
+            "horas_recibidas",
+            "horas_solidarias_disponibles",
+            "horas_solidarias_utilizadas",
+            "publicacion_id",
+            "necesidad_activa",
+            "creado_el",
+            "actualizado_el",
+        ]
+
+    def get_necesidad_activa(self, obj):
+        if obj.publicacion_id is None:
+            return False
+        publicacion = getattr(obj, "publicacion", None)
+        if publicacion is None:
+            return False
+        return publicacion.esta_activa
+
+
+class DonacionHorasSerializer(serializers.ModelSerializer):
+    donante_nombre = serializers.CharField(source="donante.nombre_real", read_only=True)
+    receptor_nombre = serializers.CharField(source="receptor.nombre_real", read_only=True)
+
+    class Meta:
+        model = DonacionHoras
+        fields = [
+            "id",
+            "donante",
+            "donante_nombre",
+            "receptor",
+            "receptor_nombre",
+            "solicitud",
+            "monto",
+            "tipo_destino",
+            "fecha",
+            "comprobante_id",
+        ]
+
+
+class UsuarioEstadoSocialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
+        fields = [
+            "id",
+            "username",
+            "nombre_real",
+            "horas_de_vida",
+            "estado_social",
+            "horas_recibidas_donacion",
         ]

@@ -6,16 +6,19 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import ValidationError
 
-from .models import Publicacion, SaldoComercial, Usuario
+from .models import DonacionHoras, Publicacion, SaldoComercial, Usuario
 from .serializers import (
     AcuerdoTruequeSerializer,
+    ClienteBasicoSerializer,
+    DonacionHorasSerializer,
     MatchEnriquecidoSerializer,
     NotificacionSerializer,
     PublicacionSerializer,
     ResenaSerializer,
     SaldoComercialSerializer,
+    SolicitudApoyoSocialSerializer,
+    UsuarioEstadoSocialSerializer,
     UsuarioSerializer,
-    ClienteBasicoSerializer,
 )
 from .services import (
     BusinessError,
@@ -23,6 +26,8 @@ from .services import (
     CargaUsuariosService,
     ComercioService,
     ComunidadService,
+    ImpactoSocialService,
+    MENSAJE_SOLICITANTE_MARCADO_VULNERABLE,
     MatchmakingService,
     NotificacionService,
     PerfilService,
@@ -638,3 +643,274 @@ class NotificacionesView(APIView):
                 {"error": f"Error al marcar notificación: {str(error)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class ImpactoSocialSolicitudesView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def get(self, request):
+        solicitudes = self.servicio.listar_solicitudes_aprobadas()
+        return Response({
+            "solicitudes": solicitudes,
+            "cantidad": len(solicitudes),
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        try:
+            solicitud = self.servicio.crear_solicitud(request.user, request.data)
+            return Response(
+                SolicitudApoyoSocialSerializer(solicitud).data,
+                status=status.HTTP_201_CREATED,
+            )
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class MisSolicitudesImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def get(self, request):
+        solicitudes = self.servicio.listar_mis_solicitudes(request.user)
+        data = SolicitudApoyoSocialSerializer(solicitudes, many=True).data
+        return Response({
+            "solicitudes": data,
+            "cantidad": len(data),
+        }, status=status.HTTP_200_OK)
+
+
+class ActivarNecesidadImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def post(self, request, solicitud_id):
+        try:
+            solicitud = self.servicio.activar_necesidad_vinculada(request.user, solicitud_id)
+            return Response({
+                "solicitud": SolicitudApoyoSocialSerializer(solicitud).data,
+                "publicacion_id": solicitud.publicacion_id,
+            }, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class MisDonacionesImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def get(self, request):
+        realizadas = self.servicio.listar_mis_donaciones_realizadas(request.user)
+        recibidas = self.servicio.listar_mis_donaciones_recibidas(request.user)
+        return Response({
+            "realizadas": DonacionHorasSerializer(realizadas, many=True).data,
+            "recibidas": DonacionHorasSerializer(recibidas, many=True).data,
+            "cantidad_realizadas": len(realizadas),
+            "cantidad_recibidas": len(recibidas),
+        }, status=status.HTTP_200_OK)
+
+
+class DonarCausaImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def post(self, request):
+        try:
+            resultado = self.servicio.donar_a_causa(
+                request.user,
+                request.data.get("solicitud_id"),
+                request.data.get("monto"),
+            )
+            donacion = DonacionHoras.objects.get(id=resultado["donacion_id"])
+            return Response({
+                "message": resultado["mensaje"],
+                "comprobante": DonacionHorasSerializer(donacion).data,
+                "saldo_restante": resultado["saldo_restante"],
+                "monto": resultado["monto"],
+                "receptor_id": resultado["receptor_id"],
+                "receptor_nombre": resultado["receptor_nombre"],
+            }, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class DonarFondoImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def post(self, request):
+        try:
+            resultado = self.servicio.donar_a_fondo(
+                request.user,
+                request.data.get("monto"),
+            )
+            donacion = DonacionHoras.objects.get(id=resultado["donacion_id"])
+            fondo = self.servicio.obtener_saldo_fondo()
+            return Response({
+                "message": resultado["mensaje"],
+                "comprobante": DonacionHorasSerializer(donacion).data,
+                "saldo_restante": resultado["saldo_restante"],
+                "saldo_fondo": fondo["saldo"],
+                "monto": resultado["monto"],
+            }, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminSolicitudesPendientesImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def get(self, request):
+        try:
+            solicitudes = self.servicio.listar_solicitudes_pendientes(request.user)
+            data = SolicitudApoyoSocialSerializer(solicitudes, many=True).data
+            return Response({
+                "solicitudes": data,
+                "cantidad": len(data),
+            }, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminAprobarSolicitudImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def post(self, request, solicitud_id):
+        try:
+            solicitud = self.servicio.aprobar_solicitud(request.user, solicitud_id)
+            data = SolicitudApoyoSocialSerializer(solicitud).data
+            if getattr(solicitud, "solicitante_marcado_vulnerable", False):
+                data["mensaje"] = MENSAJE_SOLICITANTE_MARCADO_VULNERABLE
+            else:
+                data["mensaje"] = "Solicitud aprobada correctamente."
+            return Response(data, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminRechazarSolicitudImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def post(self, request, solicitud_id):
+        try:
+            solicitud = self.servicio.rechazar_solicitud(request.user, solicitud_id)
+            return Response(
+                SolicitudApoyoSocialSerializer(solicitud).data,
+                status=status.HTTP_200_OK,
+            )
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminUsuariosImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def get(self, request):
+        try:
+            usuarios = self.servicio.listar_usuarios_para_admin(request.user)
+            data = UsuarioEstadoSocialSerializer(usuarios, many=True).data
+            return Response({
+                "usuarios": data,
+                "cantidad": len(data),
+            }, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminEstadoSocialImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def patch(self, request, usuario_id):
+        try:
+            usuario = self.servicio.actualizar_estado_social(
+                request.user,
+                usuario_id,
+                request.data.get("estado_social"),
+            )
+            return Response(
+                UsuarioEstadoSocialSerializer(usuario).data,
+                status=status.HTTP_200_OK,
+            )
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminFondoImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def get(self, request):
+        try:
+            fondo = self.servicio.obtener_saldo_fondo(request.user)
+            return Response(fondo, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)
+
+
+class AdminAsignarFondoImpactoSocialView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def __init__(self, *args, servicio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.servicio = servicio or ImpactoSocialService()
+
+    def post(self, request):
+        try:
+            resultado = self.servicio.asignar_desde_fondo(
+                request.user,
+                request.data.get("usuario_id"),
+                request.data.get("monto"),
+                request.data.get("solicitud_id"),
+            )
+            return Response(resultado, status=status.HTTP_200_OK)
+        except BusinessError as error:
+            return manejar_error(error)

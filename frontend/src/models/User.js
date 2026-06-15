@@ -8,6 +8,7 @@ export default class User {
     horas_de_vida = 0,
     promedio_estrellas = 5,
     es_comercio = false,
+    estado_social = 'NINGUNO',
     is_staff = false,
     is_superuser = false,
   } = {}) {
@@ -18,6 +19,7 @@ export default class User {
     this.horasDeVida = Number(horas_de_vida)
     this.promedioEstrellas = Number(promedio_estrellas)
     this.esComercio = Boolean(es_comercio)
+    this.estadoSocial = estado_social
     // CAMBIO AUTH: estos campos controlan la visibilidad del menu administrativo.
     this.esStaff = Boolean(is_staff)
     this.esSuperusuario = Boolean(is_superuser)

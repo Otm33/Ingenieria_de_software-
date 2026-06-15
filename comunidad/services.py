@@ -16,12 +16,19 @@ from .interfaces import (
 )
 from .models import (
     AcuerdoTrueque,
+    DonacionHoras,
     NotificacionPropuesta,
     Publicacion,
     Resena,
     SaldoComercial,
+    SolicitudApoyoSocial,
     Usuario,
     UsuarioAutorizado,
+)
+from .catalogo_causas_sociales import (
+    categoria_para_titulo,
+    es_categoria_causa_social_permitida,
+    es_titulo_causa_social_permitido,
 )
 from .validators import contiene_palabra_prohibida
 
@@ -227,11 +234,19 @@ class PublicacionService:
 
         # Solo validar limites cuando se re-activan publicaciones
         if esta_activa and not publicacion.esta_activa:
-            conteo_activas = Publicacion.objects.contar_activas_por_tipo(usuario, publicacion.tipo)
-            if publicacion.tipo == "TALENTO" and conteo_activas >= 5:
-                raise BusinessError("No puedes tener más de 5 talentos activos publicados simultáneamente.")
-            if publicacion.tipo == "NECESIDAD" and conteo_activas >= 3:
-                raise BusinessError("No puedes tener más de 3 necesidades activas simultáneamente.")
+            if publicacion.tipo == "TALENTO":
+                conteo_activas = Publicacion.objects.contar_activas_por_tipo(usuario, publicacion.tipo)
+                if conteo_activas >= 5:
+                    raise BusinessError("No puedes tener más de 5 talentos activos publicados simultáneamente.")
+            elif publicacion.tipo == "NECESIDAD" and not publicacion.es_causa_social:
+                conteo_activas = Publicacion.objects.filter(
+                    usuario=usuario,
+                    tipo="NECESIDAD",
+                    esta_activa=True,
+                    es_causa_social=False,
+                ).count()
+                if conteo_activas >= 3:
+                    raise BusinessError("No puedes tener más de 3 necesidades activas simultáneamente.")
 
         publicacion.esta_activa = esta_activa
         publicacion.save(update_fields=["esta_activa"])
@@ -248,6 +263,69 @@ class CarteleraService(CarteleraInterface):
 class TruequeService(TruequeInterface):
     def __init__(self, notificacion_service=None):
         self.notificacion_service = notificacion_service or NotificacionService()
+
+    @staticmethod
+    def _obtener_solicitud_social_desde_publicacion(publicacion):
+        if not publicacion:
+            return None
+        try:
+            return publicacion.solicitud_apoyo_social
+        except SolicitudApoyoSocial.DoesNotExist:
+            return None
+
+    @staticmethod
+    def _resolver_solicitud_social_pago(receptor_servicio, publicacion_necesidad):
+        if not publicacion_necesidad or publicacion_necesidad.tipo != "NECESIDAD":
+            return None
+        if publicacion_necesidad.usuario_id != receptor_servicio.id:
+            return None
+
+        solicitud = TruequeService._obtener_solicitud_social_desde_publicacion(publicacion_necesidad)
+        if solicitud:
+            return solicitud
+
+        return SolicitudApoyoSocial.objects.filter(
+            solicitante=receptor_servicio,
+            estado="APROBADA",
+            titulo=publicacion_necesidad.titulo,
+        ).first()
+
+    @staticmethod
+    def _descontar_pago_trueque(receptor_servicio, publicacion_necesidad, monto=1.0):
+        solicitud = TruequeService._resolver_solicitud_social_pago(
+            receptor_servicio,
+            publicacion_necesidad,
+        )
+        if solicitud:
+            solicitud = SolicitudApoyoSocial.objects.select_for_update().get(id=solicitud.id)
+            if solicitud.horas_solidarias_disponibles < monto:
+                raise BusinessError(
+                    "No tienes horas solidarias suficientes para esta causa. "
+                    "Las donaciones solidarias deben usarse en la necesidad vinculada a tu solicitud aprobada.",
+                )
+            solicitud.horas_solidarias_disponibles -= monto
+            solicitud.horas_solidarias_utilizadas += monto
+            solicitud.save(update_fields=["horas_solidarias_disponibles", "horas_solidarias_utilizadas"])
+            return "solidarias"
+
+        if receptor_servicio.horas_de_vida - monto < -10.0:
+            raise BusinessError("El usuario que recibe el servicio excedería el límite de -10 horas.")
+        receptor_servicio.horas_de_vida -= monto
+        return "general"
+
+    @staticmethod
+    def _obtener_publicacion_necesidad_trueque(trueque, receptor_servicio):
+        for usuario, publicacion in (
+            (trueque.emisor, trueque.publicacion_emisor),
+            (trueque.receptor, trueque.publicacion_receptor),
+        ):
+            if (
+                publicacion
+                and publicacion.tipo == "NECESIDAD"
+                and usuario.id == receptor_servicio.id
+            ):
+                return publicacion
+        return None
 
     @staticmethod
     def _es_intercambio_mutuo(trueque):
@@ -454,19 +532,20 @@ class TruequeService(TruequeInterface):
                 }
 
             prestador, receptor_servicio = self._identificar_roles_trueque(trueque)
+            publicacion_necesidad = self._obtener_publicacion_necesidad_trueque(
+                trueque,
+                receptor_servicio,
+            )
 
             prestador = Usuario.objects.obtener_por_id_bloqueado(prestador.id)
             receptor_servicio = Usuario.objects.obtener_por_id_bloqueado(receptor_servicio.id)
 
-            if receptor_servicio.horas_de_vida - 1.0 < -10.0:
-                raise BusinessError(
-                    "El usuario que recibe el servicio excedería el límite de -10 horas.",
-                )
+            tipo_pago = self._descontar_pago_trueque(receptor_servicio, publicacion_necesidad)
 
             prestador.horas_de_vida += 1.0
-            receptor_servicio.horas_de_vida -= 1.0
             Usuario.objects.guardar(prestador)
-            Usuario.objects.guardar(receptor_servicio)
+            if tipo_pago == "general":
+                Usuario.objects.guardar(receptor_servicio)
 
             trueque.estado = "FINALIZADO"
             AcuerdoTrueque.objects.guardar(trueque)
@@ -1203,3 +1282,430 @@ class ComunidadService:
             })
 
         return directorio
+
+
+MENSAJE_SALDO_POSITIVO_DONACION = "Necesitas saldo positivo para realizar donaciones solidarias"
+MENSAJE_TIEMPO_PRESTADO = "No puedes donar tiempo prestado"
+MENSAJE_MONTO_MINIMO_DONACION = "El monto mínimo de donación es 0.5 horas"
+MENSAJE_COMERCIO_NO_IMPACTO_SOCIAL = "Los comercios no pueden realizar donaciones solidarias"
+MENSAJE_RECEPTOR_MAS_10_HORAS = "Usuarios con más de 10 horas no pueden recibir donaciones"
+MENSAJE_TOPE_HORAS_RECIBIDAS = "No se puede donar más de 10 horas a este usuario"
+MENSAJE_SOLO_VULNERABLE_CRITICO = "Solo se puede asignar a usuarios vulnerables o críticos"
+MENSAJE_DONACION_EXITOSA = "Donación Exitosa"
+MENSAJE_NO_DONAR_PROPIA_CAUSA = "No puedes donar horas a tu propia causa."
+MENSAJE_SOLICITUD_ASIGNACION_REQUERIDA = "Debes indicar la solicitud a la que asignar las horas."
+MENSAJE_SIN_SOLICITUD_APROBADA = "El usuario no tiene solicitudes aprobadas."
+MENSAJE_SOLICITUD_NO_PERTENECE_RECEPTOR = "La solicitud no pertenece al usuario receptor."
+MENSAJE_SOLICITUD_NO_APROBADA_ACTIVAR = "Solo puedes activar necesidades de solicitudes aprobadas."
+MENSAJE_NECESIDAD_YA_VINCULADA = "Esta solicitud ya tiene una necesidad vinculada."
+MENSAJE_NO_ACTIVAR_SOLICITUD_AJENA = "No puedes activar la necesidad de una solicitud ajena."
+MENSAJE_SIN_PERMISOS_ADMIN = "No tienes permisos de administrador."
+MENSAJE_TITULO_CAUSA_INVALIDO = "El título seleccionado no corresponde a una causa social permitida."
+MENSAJE_CATEGORIA_CAUSA_INVALIDA = "La categoría seleccionada no es válida para causas sociales."
+MENSAJE_CATEGORIA_TITULO_INCONSISTENTES = "El título no pertenece a la categoría seleccionada."
+MENSAJE_SOLICITANTE_MARCADO_VULNERABLE = (
+    "Solicitud aprobada. El solicitante fue catalogado como Usuario Vulnerable."
+)
+
+
+def _validar_usuario_no_comercio_impacto_social(usuario):
+    if usuario.es_comercio:
+        raise BusinessError(MENSAJE_COMERCIO_NO_IMPACTO_SOCIAL, status_code=403)
+
+
+def _validar_admin_impacto_social(admin):
+    if not (admin.is_staff or admin.is_superuser):
+        raise BusinessError(MENSAJE_SIN_PERMISOS_ADMIN, status_code=403)
+
+
+def _validar_monto_donacion(monto):
+    try:
+        monto = float(monto)
+    except (TypeError, ValueError):
+        raise BusinessError(MENSAJE_MONTO_MINIMO_DONACION)
+
+    if monto < 0.5:
+        raise BusinessError(MENSAJE_MONTO_MINIMO_DONACION)
+    return monto
+
+
+def _validar_donante_puede_donar(donante, monto):
+    _validar_usuario_no_comercio_impacto_social(donante)
+
+    if donante.horas_de_vida <= 0:
+        raise BusinessError(MENSAJE_SALDO_POSITIVO_DONACION)
+
+    if donante.horas_de_vida - monto < 0:
+        raise BusinessError(MENSAJE_TIEMPO_PRESTADO)
+
+
+def _validar_receptor_puede_recibir_donacion(receptor, monto):
+    if receptor.es_fondo_comunitario:
+        return
+
+    if receptor.horas_de_vida > 10:
+        raise BusinessError(MENSAJE_RECEPTOR_MAS_10_HORAS)
+
+    if receptor.horas_recibidas_donacion + monto > 10:
+        raise BusinessError(MENSAJE_TOPE_HORAS_RECIBIDAS)
+
+
+def _resolver_solicitud_asignacion_fondo(receptor, solicitud_id):
+    if solicitud_id is not None:
+        try:
+            solicitud = SolicitudApoyoSocial.objects.get(id=solicitud_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Solicitud no encontrada.", status_code=404)
+    else:
+        solicitudes_aprobadas = SolicitudApoyoSocial.objects.filter(
+            solicitante_id=receptor.id,
+            estado="APROBADA",
+        )
+        cantidad = solicitudes_aprobadas.count()
+        if cantidad == 0:
+            raise BusinessError(MENSAJE_SIN_SOLICITUD_APROBADA)
+        if cantidad > 1:
+            raise BusinessError(MENSAJE_SOLICITUD_ASIGNACION_REQUERIDA)
+        solicitud = solicitudes_aprobadas.first()
+
+    if solicitud.estado != "APROBADA":
+        raise BusinessError("Solo se puede asignar a solicitudes aprobadas.")
+    if solicitud.solicitante_id != receptor.id:
+        raise BusinessError(MENSAJE_SOLICITUD_NO_PERTENECE_RECEPTOR)
+    return solicitud
+
+
+def _obtener_fondo_comunitario():
+    try:
+        return Usuario.objects.get(username="fondo_comunitario", es_fondo_comunitario=True)
+    except ObjectDoesNotExist:
+        raise BusinessError("Fondo comunitario no configurado.", status_code=500)
+
+
+class ImpactoSocialService:
+    """Sprint 2 HU1: Donaciones solidarias y gestión de apoyo social."""
+
+    def crear_solicitud(self, usuario, datos):
+        _validar_usuario_no_comercio_impacto_social(usuario)
+
+        categoria = (datos.get("categoria") or "").strip()
+        if not categoria or not es_categoria_causa_social_permitida(categoria):
+            raise BusinessError(MENSAJE_CATEGORIA_CAUSA_INVALIDA)
+
+        titulo = (datos.get("titulo") or "").strip()
+        if not titulo or not es_titulo_causa_social_permitido(titulo):
+            raise BusinessError(MENSAJE_TITULO_CAUSA_INVALIDO)
+
+        if categoria_para_titulo(titulo) != categoria:
+            raise BusinessError(MENSAJE_CATEGORIA_TITULO_INCONSISTENTES)
+
+        descripcion = (datos.get("descripcion") or "").strip()
+        if not descripcion:
+            raise BusinessError("Título y descripción son obligatorios.")
+
+        return SolicitudApoyoSocial.objects.create(
+            solicitante=usuario,
+            categoria=categoria,
+            titulo=titulo,
+            descripcion=descripcion,
+            estado="PENDIENTE",
+        )
+
+    def listar_solicitudes_aprobadas(self):
+        solicitudes = SolicitudApoyoSocial.objects.filter(
+            estado="APROBADA",
+        ).select_related("solicitante").order_by("-id")
+
+        return [
+            {
+                "id": solicitud.id,
+                "categoria": solicitud.categoria,
+                "titulo": solicitud.titulo,
+                "descripcion": solicitud.descripcion,
+                "horas_recibidas": solicitud.horas_recibidas,
+                "estado_social_solicitante": solicitud.solicitante.estado_social,
+                "solicitante_id": solicitud.solicitante_id,
+                "solicitante_nombre": solicitud.solicitante.nombre_real,
+                "horas_recibidas_donacion_solicitante": solicitud.solicitante.horas_recibidas_donacion,
+                "horas_de_vida_solicitante": solicitud.solicitante.horas_de_vida,
+            }
+            for solicitud in solicitudes
+        ]
+
+    def listar_mis_solicitudes(self, usuario):
+        return list(
+            SolicitudApoyoSocial.objects.filter(solicitante=usuario)
+            .select_related("publicacion")
+            .order_by("-id"),
+        )
+
+    def activar_necesidad_vinculada(self, usuario, solicitud_id):
+        """Publica una NECESIDAD en cartelera vinculada a una solicitud aprobada.
+
+        Las publicaciones es_causa_social=True no cuentan contra el límite de 3
+        necesidades activas de la cartelera. Urgencia ALTA por defecto (causa validada).
+        """
+        _validar_usuario_no_comercio_impacto_social(usuario)
+
+        try:
+            solicitud = SolicitudApoyoSocial.objects.select_related("publicacion").get(id=solicitud_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Solicitud no encontrada.", status_code=404)
+
+        if solicitud.solicitante_id != usuario.id:
+            raise BusinessError(MENSAJE_NO_ACTIVAR_SOLICITUD_AJENA)
+
+        if solicitud.estado != "APROBADA":
+            raise BusinessError(MENSAJE_SOLICITUD_NO_APROBADA_ACTIVAR)
+
+        if solicitud.publicacion_id is not None:
+            raise BusinessError(MENSAJE_NECESIDAD_YA_VINCULADA)
+
+        with transaction.atomic():
+            publicacion = Publicacion.objects.create(
+                usuario=usuario,
+                tipo="NECESIDAD",
+                titulo=solicitud.titulo,
+                descripcion=solicitud.descripcion,
+                categoria=solicitud.categoria,
+                urgencia="ALTA",
+                es_causa_social=True,
+                esta_activa=True,
+            )
+            solicitud.publicacion = publicacion
+            solicitud.save(update_fields=["publicacion"])
+
+        MatchmakingService().detectar_y_notificar_matches(usuario)
+        solicitud.refresh_from_db()
+        return solicitud
+
+    def listar_solicitudes_pendientes(self, admin):
+        _validar_admin_impacto_social(admin)
+        return list(
+            SolicitudApoyoSocial.objects.filter(estado="PENDIENTE")
+            .select_related("solicitante")
+            .order_by("creado_el"),
+        )
+
+    def aprobar_solicitud(self, admin, solicitud_id):
+        _validar_admin_impacto_social(admin)
+
+        try:
+            solicitud = SolicitudApoyoSocial.objects.get(id=solicitud_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Solicitud no encontrada.", status_code=404)
+
+        if solicitud.estado != "PENDIENTE":
+            raise BusinessError("Solo se pueden aprobar solicitudes pendientes.")
+
+        marcado_vulnerable = False
+        with transaction.atomic():
+            solicitud.estado = "APROBADA"
+            solicitud.aprobada_por = admin
+            solicitud.save(update_fields=["estado", "aprobada_por"])
+
+            solicitante = Usuario.objects.select_for_update().get(id=solicitud.solicitante_id)
+            if solicitante.estado_social == "NINGUNO":
+                solicitante.estado_social = "VULNERABLE"
+                solicitante.save(update_fields=["estado_social"])
+                marcado_vulnerable = True
+
+        solicitud.refresh_from_db()
+        solicitud.solicitante.refresh_from_db()
+        solicitud.solicitante_marcado_vulnerable = marcado_vulnerable
+        return solicitud
+
+    def rechazar_solicitud(self, admin, solicitud_id):
+        _validar_admin_impacto_social(admin)
+
+        try:
+            solicitud = SolicitudApoyoSocial.objects.get(id=solicitud_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Solicitud no encontrada.", status_code=404)
+
+        if solicitud.estado != "PENDIENTE":
+            raise BusinessError("Solo se pueden rechazar solicitudes pendientes.")
+
+        solicitud.estado = "RECHAZADA"
+        solicitud.aprobada_por = admin
+        solicitud.save()
+        return solicitud
+
+    def actualizar_estado_social(self, admin, usuario_id, estado_social):
+        _validar_admin_impacto_social(admin)
+
+        estados_validos = {choice[0] for choice in Usuario.ESTADO_SOCIAL_CHOICES}
+        if estado_social not in estados_validos:
+            raise BusinessError("Estado social inválido.")
+
+        try:
+            usuario = Usuario.objects.get(id=usuario_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Usuario no encontrado.", status_code=404)
+
+        if usuario.es_fondo_comunitario or usuario.es_comercio:
+            raise BusinessError("No se puede modificar el estado social de este usuario.")
+
+        usuario.estado_social = estado_social
+        usuario.save(update_fields=["estado_social"])
+        return usuario
+
+    def listar_usuarios_para_admin(self, admin):
+        _validar_admin_impacto_social(admin)
+        return list(
+            Usuario.objects.filter(
+                is_active=True,
+                es_comercio=False,
+                is_staff=False,
+                is_superuser=False,
+                es_fondo_comunitario=False,
+            ).order_by("nombre_real", "username"),
+        )
+
+    def obtener_saldo_fondo(self, admin=None):
+        if admin is not None:
+            _validar_admin_impacto_social(admin)
+
+        fondo = _obtener_fondo_comunitario()
+        return {
+            "saldo": fondo.horas_de_vida,
+            "username": fondo.username,
+        }
+
+    def donar_a_causa(self, donante, solicitud_id, monto):
+        monto = _validar_monto_donacion(monto)
+
+        try:
+            solicitud = SolicitudApoyoSocial.objects.select_related("solicitante").get(id=solicitud_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Solicitud no encontrada.", status_code=404)
+
+        if solicitud.estado != "APROBADA":
+            raise BusinessError("Solo se puede donar a solicitudes aprobadas.")
+
+        if donante.id == solicitud.solicitante_id:
+            raise BusinessError(MENSAJE_NO_DONAR_PROPIA_CAUSA)
+
+        return self._ejecutar_donacion(
+            donante=donante,
+            receptor=solicitud.solicitante,
+            monto=monto,
+            tipo_destino="CAUSA",
+            solicitud=solicitud,
+        )
+
+    def donar_a_fondo(self, donante, monto):
+        monto = _validar_monto_donacion(monto)
+        fondo = _obtener_fondo_comunitario()
+        return self._ejecutar_donacion(
+            donante=donante,
+            receptor=fondo,
+            monto=monto,
+            tipo_destino="FONDO",
+            solicitud=None,
+        )
+
+    def asignar_desde_fondo(self, admin, usuario_id, monto, solicitud_id=None):
+        _validar_admin_impacto_social(admin)
+        monto = _validar_monto_donacion(monto)
+
+        try:
+            receptor = Usuario.objects.get(id=usuario_id)
+        except ObjectDoesNotExist:
+            raise BusinessError("Usuario no encontrado.", status_code=404)
+
+        if receptor.estado_social not in ("VULNERABLE", "CRITICO"):
+            raise BusinessError(MENSAJE_SOLO_VULNERABLE_CRITICO)
+
+        solicitud = _resolver_solicitud_asignacion_fondo(receptor, solicitud_id)
+        _validar_receptor_puede_recibir_donacion(receptor, monto)
+
+        with transaction.atomic():
+            fondo = Usuario.objects.obtener_por_id_bloqueado(
+                _obtener_fondo_comunitario().id,
+            )
+            receptor = Usuario.objects.obtener_por_id_bloqueado(receptor.id)
+            solicitud = SolicitudApoyoSocial.objects.select_for_update().get(id=solicitud.id)
+
+            if fondo.horas_de_vida < monto:
+                raise BusinessError("El fondo comunitario no tiene saldo suficiente.")
+
+            fondo.horas_de_vida -= monto
+            receptor.horas_recibidas_donacion += monto
+            solicitud.horas_solidarias_disponibles += monto
+            solicitud.horas_recibidas += monto
+            solicitud.save(update_fields=["horas_solidarias_disponibles", "horas_recibidas"])
+            Usuario.objects.guardar(fondo)
+            Usuario.objects.guardar(receptor)
+
+            donacion = DonacionHoras.objects.create(
+                donante=fondo,
+                receptor=receptor,
+                solicitud=solicitud,
+                monto=monto,
+                tipo_destino="ASIGNACION",
+            )
+
+        return {
+            "mensaje": "Asignación desde fondo realizada.",
+            "monto": monto,
+            "receptor_id": receptor.id,
+            "solicitud_id": solicitud.id,
+            "horas_solidarias_disponibles": solicitud.horas_solidarias_disponibles,
+            "saldo_fondo": fondo.horas_de_vida,
+            "saldo_receptor": receptor.horas_de_vida,
+            "donacion_id": donacion.id,
+            "comprobante_id": str(donacion.comprobante_id),
+        }
+
+    def listar_mis_donaciones_realizadas(self, usuario):
+        return DonacionHoras.objects.filter(
+            donante=usuario,
+        ).select_related("donante", "receptor", "solicitud").order_by("-fecha")
+
+    def listar_mis_donaciones_recibidas(self, usuario):
+        return DonacionHoras.objects.filter(
+            receptor=usuario,
+        ).select_related("donante", "receptor", "solicitud").order_by("-fecha")
+
+    def _ejecutar_donacion(self, donante, receptor, monto, tipo_destino, solicitud):
+        with transaction.atomic():
+            donante = Usuario.objects.obtener_por_id_bloqueado(donante.id)
+            receptor = Usuario.objects.obtener_por_id_bloqueado(receptor.id)
+
+            _validar_donante_puede_donar(donante, monto)
+            _validar_receptor_puede_recibir_donacion(receptor, monto)
+
+            if solicitud is not None:
+                solicitud = SolicitudApoyoSocial.objects.select_for_update().get(id=solicitud.id)
+
+            donante.horas_de_vida -= monto
+
+            if tipo_destino == "CAUSA":
+                receptor.horas_recibidas_donacion += monto
+                solicitud.horas_solidarias_disponibles += monto
+                solicitud.horas_recibidas += monto
+                solicitud.save(update_fields=["horas_solidarias_disponibles", "horas_recibidas"])
+            else:
+                receptor.horas_de_vida += monto
+
+            donacion = DonacionHoras.objects.create(
+                donante=donante,
+                receptor=receptor,
+                solicitud=solicitud,
+                monto=monto,
+                tipo_destino=tipo_destino,
+            )
+            Usuario.objects.guardar(donante)
+            Usuario.objects.guardar(receptor)
+
+        return {
+            "mensaje": MENSAJE_DONACION_EXITOSA,
+            "monto": monto,
+            "tipo_destino": tipo_destino,
+            "receptor_id": receptor.id,
+            "receptor_nombre": receptor.nombre_real,
+            "saldo_restante": donante.horas_de_vida,
+            "comprobante_id": str(donacion.comprobante_id),
+            "donacion_id": donacion.id,
+        }

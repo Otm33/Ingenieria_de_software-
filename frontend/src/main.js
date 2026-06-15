@@ -5,6 +5,7 @@ import './styles.css'
 
 import UserService from './services/UserService.js'
 import ComercioService from './services/ComercioService.js'
+import ImpactoSocialService from './services/ImpactoSocialService.js'
 import AuthController from './controllers/AuthController.js'
 import AdminController from './controllers/AdminController.js'
 import CarteleraController from './controllers/CarteleraController.js'
@@ -12,9 +13,11 @@ import TruequeController from './controllers/TruequeController.js'
 import ResenaController from './controllers/ResenaController.js'
 import ComunidadController from './controllers/ComunidadController.js'
 import ComercioController from './controllers/ComercioController.js'
+import ImpactoSocialController from './controllers/ImpactoSocialController.js'
 
 const userService = new UserService('/api/')
 const comercioService = new ComercioService('/api/')
+const impactoSocialService = new ImpactoSocialService('/api/')
 
 const authController = new AuthController(userService)
 const adminController = new AdminController(userService)
@@ -23,6 +26,7 @@ const truequeController = new TruequeController(userService)
 const resenaController = new ResenaController(userService)
 const comunidadController = new ComunidadController(userService)
 const comercioController = new ComercioController(comercioService)
+const impactoSocialController = new ImpactoSocialController(impactoSocialService)
 
 const app = createApp(App)
 
@@ -33,6 +37,7 @@ app.provide('truequeController', truequeController)
 app.provide('resenaController', resenaController)
 app.provide('comunidadController', comunidadController)
 app.provide('comercioController', comercioController)
+app.provide('impactoSocialController', impactoSocialController)
 
 app.use(router)
 app.mount('#app')

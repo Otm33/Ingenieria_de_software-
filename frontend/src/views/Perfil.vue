@@ -39,7 +39,7 @@
               <div class="estadistica-icon">HORAS</div>
               <div class="estadistica-info">
                 <div class="estadistica-valor">{{ datosPerfil.usuario.horas_de_vida.toFixed(1) }}</div>
-                <div class="estadistica-label">Horas de Vida</div>
+                <div class="estadistica-label">Horas de vida (general)</div>
               </div>
             </div>
             <div v-if="tieneSaldoComercial" class="estadistica-card">

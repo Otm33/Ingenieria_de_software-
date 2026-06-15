@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 
@@ -118,11 +119,20 @@ class UsuarioManager(UserManager):
 
 class Usuario(AbstractUser):
     """HU2: Perfil del usuario con balance de Horas de Vida y reputación."""
+    ESTADO_SOCIAL_CHOICES = [
+        ('NINGUNO', 'Ninguno'),
+        ('VULNERABLE', 'Vulnerable'),
+        ('CRITICO', 'Crítico'),
+    ]
+
     email = models.EmailField(unique=True)
     nombre_real = models.CharField(max_length=150)
     horas_de_vida = models.FloatField(default=0.0)
     es_comercio = models.BooleanField(default=False)
     saldo_comercial = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    estado_social = models.CharField(max_length=15, choices=ESTADO_SOCIAL_CHOICES, default='NINGUNO')
+    horas_recibidas_donacion = models.FloatField(default=0.0)
+    es_fondo_comunitario = models.BooleanField(default=False)
 
     objects = UsuarioManager()
 
@@ -278,6 +288,7 @@ class Publicacion(models.Model):
     categoria = models.CharField(max_length=80, db_index=True)
     urgencia = models.CharField(max_length=10, choices=URGENCIA_CHOICES, default='NORMAL', db_index=True)
     esta_activa = models.BooleanField(default=True)
+    es_causa_social = models.BooleanField(default=False, db_index=True)
 
     objects = PublicacionManager()
 
@@ -287,8 +298,13 @@ class Publicacion(models.Model):
             if conteo >= 5 and not self.pk:
                 raise ValidationError("No puedes tener más de 5 talentos activos publicados simultáneamente.")
 
-        if self.tipo == 'NECESIDAD' and self.esta_activa:
-            conteo = Publicacion.objects.filter(usuario=self.usuario, tipo='NECESIDAD', esta_activa=True).count()
+        if self.tipo == 'NECESIDAD' and self.esta_activa and not self.es_causa_social:
+            conteo = Publicacion.objects.filter(
+                usuario=self.usuario,
+                tipo='NECESIDAD',
+                esta_activa=True,
+                es_causa_social=False,
+            ).count()
             if conteo >= 3 and not self.pk:
                 raise ValidationError("No puedes tener más de 3 necesidades activas simultáneamente.")
 
@@ -584,3 +600,78 @@ class SaldoComercial(models.Model):
     fecha_expiracion = models.DateTimeField()
 
     objects = SaldoComercialManager()
+
+
+class SolicitudApoyoSocial(models.Model):
+    """Sprint 2 HU1: Solicitudes de apoyo social publicadas por usuarios."""
+    ESTADOS = (
+        ('PENDIENTE', 'Pendiente'),
+        ('APROBADA', 'Aprobada'),
+        ('RECHAZADA', 'Rechazada'),
+    )
+
+    solicitante = models.ForeignKey(
+        Usuario,
+        on_delete=models.CASCADE,
+        related_name='solicitudes_apoyo',
+    )
+    categoria = models.CharField(max_length=80, blank=True, default='')
+    titulo = models.CharField(max_length=150)
+    descripcion = models.TextField()
+    estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
+    horas_recibidas = models.FloatField(default=0.0)
+    horas_solidarias_disponibles = models.FloatField(default=0.0)
+    horas_solidarias_utilizadas = models.FloatField(default=0.0)
+    publicacion = models.OneToOneField(
+        'Publicacion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='solicitud_apoyo_social',
+    )
+    aprobada_por = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='solicitudes_aprobadas',
+    )
+    creado_el = models.DateTimeField(auto_now_add=True)
+    actualizado_el = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.titulo} ({self.estado})"
+
+
+class DonacionHoras(models.Model):
+    """Sprint 2 HU1: Ledger irreversible de donaciones de Horas de Vida."""
+    TIPO_DESTINO_CHOICES = [
+        ('CAUSA', 'Causa'),
+        ('FONDO', 'Fondo'),
+        ('ASIGNACION', 'Asignación desde fondo'),
+    ]
+
+    donante = models.ForeignKey(
+        Usuario,
+        on_delete=models.CASCADE,
+        related_name='donaciones_realizadas',
+    )
+    receptor = models.ForeignKey(
+        Usuario,
+        on_delete=models.CASCADE,
+        related_name='donaciones_recibidas',
+    )
+    solicitud = models.ForeignKey(
+        SolicitudApoyoSocial,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='donaciones',
+    )
+    monto = models.FloatField()
+    tipo_destino = models.CharField(max_length=10, choices=TIPO_DESTINO_CHOICES)
+    fecha = models.DateTimeField(auto_now_add=True)
+    comprobante_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    def __str__(self):
+        return f"Donación {self.monto}h ({self.tipo_destino})"

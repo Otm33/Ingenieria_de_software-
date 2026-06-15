@@ -30,6 +30,15 @@
           >
             <span>Comunidad</span>
           </button>
+          <button
+            v-if="!usuarioActual?.esComercio"
+            class="nav__link nav__link--icon"
+            type="button"
+            @click="seccionActiva = 'impacto-social'"
+            title="Impacto Social"
+          >
+            <span>Impacto Social</span>
+          </button>
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'red-comercial'" title="Red Comercial">
             <span>Red Comercial</span>
           </button>
@@ -37,6 +46,9 @@
 
         <nav v-if="usuarioActual?.esStaff || usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
           <button class="nav__link" type="button" @click="seccionActiva = 'csv'">Usuarios CSV</button>
+          <button class="nav__link" type="button" @click="seccionActiva = 'admin-impacto-social'">
+            Gestión Impacto Social
+          </button>
           <a class="nav__link" href="http://127.0.0.1:8000/admin/" target="_blank">Admin Django</a>
         </nav>
 
@@ -132,9 +144,13 @@
         <Cartelera v-else-if="seccionActiva === 'publicar'" :modo-publicar="true" @volver-cartelera="seccionActiva = 'cartelera'" />
         <Perfil v-else-if="seccionActiva === 'perfil'" @ir-red-comercial="seccionActiva = 'red-comercial'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
+        <ImpactoSocial v-else-if="seccionActiva === 'impacto-social'" />
         <RedComercial v-else-if="seccionActiva === 'red-comercial'" />
         <Register v-else-if="usuarioActual.esStaff && seccionActiva === 'registro'" />
         <AdminCSV v-else-if="usuarioActual.esStaff && seccionActiva === 'csv'" />
+        <AdminImpactoSocial
+          v-else-if="(usuarioActual.esStaff || usuarioActual.esSuperusuario) && seccionActiva === 'admin-impacto-social'"
+        />
         <Cartelera v-else />
       </template>
     </main>
@@ -173,10 +189,12 @@
 <script setup>
 import { computed, inject, onMounted, provide, reactive, ref, watch } from 'vue'
 import AdminCSV from './views/AdminCSV.vue'
+import AdminImpactoSocial from './views/AdminImpactoSocial.vue'
 import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
 import Perfil from './views/Perfil.vue'
 import Comunidad from './views/Comunidad.vue'
+import ImpactoSocial from './views/ImpactoSocial.vue'
 import RedComercial from './views/RedComercial.vue'
 import ModalNotificaciones from './components/ModalNotificaciones.vue'
 import ModalPropuesta from './components/ModalPropuesta.vue'
@@ -197,7 +215,7 @@ const loginForm = reactive({ username: '', password: '' })
 const seccionInicialParaUsuario = (usuario) => (usuario?.esComercio ? 'red-comercial' : 'cartelera')
 
 const normalizarSeccionComercio = () => {
-  if (usuarioActual.value?.esComercio && ['cartelera', 'publicar', 'comunidad'].includes(seccionActiva.value)) {
+  if (usuarioActual.value?.esComercio && ['cartelera', 'publicar', 'comunidad', 'impacto-social'].includes(seccionActiva.value)) {
     seccionActiva.value = 'red-comercial'
   }
 }
