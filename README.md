@@ -1,5 +1,19 @@
 # TuTrueque
 
+## Arranque rapido en Windows
+
+Para iniciar todo el proyecto con un solo paso, ejecuta:
+
+```bat
+iniciar_tutrueque.bat
+```
+
+El script crea/usa el entorno virtual, instala dependencias, verifica la base `Tu_Trueque`, aplica migraciones, crea el superusuario `admin/admin` si no existe y abre dos terminales: backend en `http://127.0.0.1:8000` y frontend en `http://127.0.0.1:5173`.
+
+Requisitos locales: Python, Node.js/npm y PostgreSQL instalado con usuario `postgres` y clave `admin123`, como esta definido en `config/settings.py`.
+
+---
+
 Este es el proyecto de Ingeniería de Software **TuTrueque**, una aplicación web diseñada para el intercambio de servicios y talentos basado en horas de vida y saldos comerciales. El proyecto está completamente dockerizado para facilitar su desarrollo local.
 
 ---

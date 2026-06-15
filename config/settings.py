@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-_$)5q_lc20a!wf(*p8)x^f7()eym-+(1m5sefi5i&cka#lw3*_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'testserver']
 
 
 # Application definition
@@ -37,11 +37,15 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # CAMBIO MVC/POO: rest_framework expone los controladores API que conectan Vue con la BD.
+    'rest_framework',
+    # CAMBIO MVC/POO: corsheaders permite que la vista Vue consuma los controladores Django.
     'corsheaders',
     'comunidad',
 ]
 
 MIDDLEWARE = [
+    # CAMBIO MVC/POO: CORS debe ejecutarse antes de CommonMiddleware para aceptar peticiones del frontend.
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -51,8 +55,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-# ... Todo lo de arriba (BASE_DIR, SECRET_KEY, DEBUG, ALLOWED_HOSTS) queda igual ...
 
 ROOT_URLCONF = 'config.urls'
 
@@ -104,32 +106,10 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 
-# === CONFIGURACIONES PRINCIPALES DEL PROYECTO (MANTENER ESTAS) ===
-
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    'corsheaders',
-    'comunidad', # Tu app del Sprint 1
-]
-
-MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware', # Para hablar con Vue
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
+# CAMBIO LIMPIEZA: se eliminaron las listas duplicadas de INSTALLED_APPS y MIDDLEWARE.
 
 # Configuración del modelo de Usuario Personalizado
 AUTH_USER_MODEL = 'comunidad.Usuario'
@@ -142,6 +122,11 @@ PASSWORD_HASHERS = [
 CORS_ALLOW_ALL_ORIGINS = True 
 
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]

@@ -1,32 +1,20 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-// CORREGIDO: Ahora los nombres apuntan exactamente a tus archivos reales
-import Cartelera from '../views/Cartelera.vue' 
-import Register from '../views/Register.vue'
-import AdminCSV from '../views/AdminCSV.vue'
-
+// CAMBIO VISTA: la aplicacion queda como una sola pagina real en /.
 const routes = [
   {
     path: '/',
-    name: 'cartelera',
-    component: Cartelera
+    component: { template: '<span />' },
   },
   {
-    path: '/register',
-    name: 'register',
-    component: Register
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
   },
-  {
-    path: '/admin-csv',
-    name: 'admin-csv',
-    component: AdminCSV
-  }
-
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes
+  routes,
 })
 
 export default router

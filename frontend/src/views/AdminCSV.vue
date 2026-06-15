@@ -1,66 +1,122 @@
 <template>
-  <div class="p-8 max-w-xl mx-auto bg-white rounded-xl shadow-md space-y-4 mt-10">
-    <h2 class="text-2xl font-bold text-gray-800">Cargar Comunidad Autorizada (.CSV)</h2>
-    <div class="border-2 border-dashed border-gray-300 p-6 rounded-lg text-center">
-      <input type="file" @change="seleccionarArchivo" accept=".csv" class="mb-4 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-      <button @click="subirArchivo" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition">Procesar Lista</button>
+  <section class="page">
+    <div class="page-header">
+      <div>
+        <p class="eyebrow">Administracion</p>
+        <h2 class="page-title">Carga de usuarios autorizados</h2>
+        <p class="page-description">
+          Sube un archivo CSV con correos separados para usuarios y comercios autorizados.
+        </p>
+      </div>
     </div>
-    <p v-if="mensaje" class="text-green-600 font-medium text-sm text-center">{{ mensaje }}</p>
-    <p v-if="error" class="text-red-600 font-medium text-sm text-center">{{ error }}</p>
-  </div>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h3 class="panel__title">Archivo CSV</h3>
+      </div>
+
+      <div class="panel__body">
+        <div class="file-box">
+          <div class="form-group">
+            <label for="archivo_csv">Seleccionar archivo</label>
+            <input id="archivo_csv" class="input" type="file" accept=".csv" @change="seleccionarArchivo" />
+          </div>
+
+          <div class="form-actions">
+            <button class="button button--accent" type="button" :disabled="procesando" @click="subirArchivo">
+              {{ procesando ? 'Procesando...' : 'Procesar lista' }}
+            </button>
+          </div>
+        </div>
+
+        <p v-if="mensaje" class="alert alert--success">{{ mensaje }}</p>
+        <p v-if="error" class="alert alert--error">{{ error }}</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h3 class="panel__title">Formato esperado</h3>
+      </div>
+      <div class="panel__body">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Columna</th>
+                <th>Descripcion</th>
+                <th>Ejemplo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>email Usuarios</td>
+                <td>Correo autorizado para registro de usuarios</td>
+                <td>persona@correo.com</td>
+              </tr>
+              <tr>
+                <td>email Comercios</td>
+                <td>Correo autorizado para registro de comercios</td>
+                <td>negocio@correo.com</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </section>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import axios from 'axios';
+import { inject, ref } from 'vue';
 
+// CAMBIO VISTA: la vista delega la persistencia CSV al controlador instanciado.
+const authController = inject('authController');
+const adminController = inject('adminController');
 const archivo = ref(null);
 const mensaje = ref('');
 const error = ref('');
+const procesando = ref(false);
 
 const seleccionarArchivo = (event) => {
   const file = event.target.files[0];
-  
+
+  mensaje.value = '';
+  error.value = '';
+
   if (!file) {
     archivo.value = null;
     return;
   }
 
-  // Convertimos a minúsculas para evitar problemas si el archivo termina en .CSV o .csv
-  const nombreArchivo = file.name.toLowerCase();
-
-  if (nombreArchivo.endsWith('.csv')) {
-    error.value = '';
-    archivo.value = file; // Aquí guardamos el archivo con éxito
-    console.log("Archivo seleccionado correctamente:", file.name);
-  } else {
-    error.value = "Formato de archivo incorrecto. Solo se acepta .csv";
-    archivo.value = null; // Si no es CSV, lo limpia por seguridad
-    event.target.value = ''; // Resetea el input de la pantalla
+  if (file.name.toLowerCase().endsWith('.csv')) {
+    archivo.value = file;
+    return;
   }
+
+  archivo.value = null;
+  event.target.value = '';
+  error.value = 'Formato incorrecto. Solo se acepta .csv.';
 };
 
 const subirArchivo = async () => {
   if (!archivo.value) {
-    error.value = "Por favor, selecciona un archivo primero.";
+    error.value = 'Selecciona un archivo CSV antes de procesar.';
     return;
   }
-  
-  const formData = new FormData();
-  formData.append('archivo_csv', archivo.value);
 
   mensaje.value = '';
   error.value = '';
+  procesando.value = true;
 
   try {
-    const response = await axios.post('/api/cargar-csv/', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    // Django suele responder con un JSON que tiene la clave 'mensaje' o 'message'
-    mensaje.value = response.data.mensaje || response.data.message || "Archivo procesado con éxito.";
+    // CAMBIO VISTA: el archivo pasa por controlador -> servicio -> API Django -> BD.
+    const response = await adminController.cargarArchivoDirecto(archivo.value, authController);
+    mensaje.value = response.mensaje || response.message || 'Archivo procesado correctamente.';
   } catch (err) {
-    console.error("Error completo del servidor:", err);
-    error.value = err.response?.data?.error || "Error al procesar el archivo masivo en el servidor.";
+    error.value = err.message || 'Error al procesar el archivo.';
+  } finally {
+    procesando.value = false;
   }
 };
 </script>
