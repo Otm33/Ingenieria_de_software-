@@ -1,18 +1,29 @@
+"""
+Router Sprint 1 HU 5 — Comercio y saldo comercial.
+Un router por controlador.
+"""
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from comunidad.controladores.hu_saldo_comercial_controller import SaldoComercialController
+from comunidad.controladores.hu_s1_hu5_comercio_controller import ComercioController
 from comunidad.dto.request_models import EmitirVueltoRequest, PagarConSaldoRequest
-from comunidad.services import ComercioService
 from comunidad.repositorios_implementacion import UsuarioRepository
-from comunidad.utils import CsrfExemptSessionAuthentication
+from comunidad.services import ComercioService
 from comunidad.services.base import BusinessError
+from comunidad.utils import CsrfExemptSessionAuthentication
+
+
+def _controlador():
+    return ComercioController(
+        comercio_service=ComercioService(),
+        usuario_repository=UsuarioRepository(),
+    )
 
 
 class EmitirVueltoRouter(APIView):
-    """Router para POST /comercio/emitir-vuelto/"""
+    """POST /comercio/emitir-vuelto/ — Emitir vuelto como comercio."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
@@ -24,14 +35,8 @@ class EmitirVueltoRouter(APIView):
                 monto_recibido=request.data.get("monto_recibido"),
                 monto_excedente=request.data.get("monto_excedente"),
             )
-
-            controlador = SaldoComercialController(
-                comercio_service=ComercioService(),
-                usuario_repository=UsuarioRepository(),
-            )
-            resultado = controlador.emitir_vuelto(request.user, req_data)
+            resultado = _controlador().emitir_vuelto(request.user, req_data)
             return Response(resultado, status=status.HTTP_200_OK)
-
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
         except (ValueError, TypeError) as e:
@@ -41,7 +46,7 @@ class EmitirVueltoRouter(APIView):
 
 
 class PagarConSaldoRouter(APIView):
-    """Router para POST /comercio/pagar/"""
+    """POST /comercio/pagar/ — Pagar con saldo comercial."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
@@ -51,14 +56,8 @@ class PagarConSaldoRouter(APIView):
                 comercio_id=request.data.get("comercio_id"),
                 monto=float(request.data.get("monto", 0)),
             )
-
-            controlador = SaldoComercialController(
-                comercio_service=ComercioService(),
-                usuario_repository=UsuarioRepository(),
-            )
-            resultado = controlador.pagar_con_saldo(request.user, req_data)
+            resultado = _controlador().pagar_con_saldo(request.user, req_data)
             return Response(resultado, status=status.HTTP_200_OK)
-
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
         except (ValueError, TypeError) as e:
@@ -68,51 +67,39 @@ class PagarConSaldoRouter(APIView):
 
 
 class MiSaldoComercialRouter(APIView):
-    """Router para GET /mi-saldo-comercial/"""
+    """GET /mi-saldo-comercial/ — Ver saldo comercial."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def get(self, request):
         try:
-            controlador = SaldoComercialController(
-                comercio_service=ComercioService(),
-                usuario_repository=UsuarioRepository(),
-            )
-            resultado = controlador.ver_saldo(request.user)
+            resultado = _controlador().ver_saldo(request.user)
             return Response(resultado, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ComerciosRouter(APIView):
-    """Router para GET /comercios/"""
+    """GET /comercios/ — Listar comercios afiliados."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def get(self, request):
         try:
-            controlador = SaldoComercialController(
-                comercio_service=ComercioService(),
-                usuario_repository=UsuarioRepository(),
-            )
-            resultado = controlador.listar_comercios()
+            resultado = _controlador().listar_comercios()
             return Response({"comercios": resultado}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ClientesRouter(APIView):
-    """Router para GET /clientes/"""
+    """GET /clientes/ — Listar clientes."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def get(self, request):
         try:
-            controlador = SaldoComercialController(
-                comercio_service=ComercioService(),
-                usuario_repository=UsuarioRepository(),
-            )
-            resultado = controlador.listar_clientes()
+            resultado = _controlador().listar_clientes()
             return Response({"clientes": resultado}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -85,6 +85,18 @@ export default class AdminController extends BaseController {
     this.clearError()
   }
 
+  async cargarArchivoDirecto(archivo, authController) {
+    if (!archivo) {
+      throw new Error('Debes seleccionar un archivo CSV antes de procesar.')
+    }
+    if (!archivo.name.toLowerCase().endsWith('.csv')) {
+      throw new Error('Formato incorrecto. Solo se acepta .csv.')
+    }
+
+    this.archivoSeleccionado.value = archivo
+    return this.cargarUsuariosAutorizados(authController)
+  }
+
   /**
    * Invalida toda la caché administrativa
    */

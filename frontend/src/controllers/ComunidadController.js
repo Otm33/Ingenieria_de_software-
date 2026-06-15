@@ -141,6 +141,14 @@ export default class ComunidadController extends BaseController {
     }
   }
 
+  async obtenerComunidad(forceRefresh = false) {
+    return this.cargarComunidad(forceRefresh)
+  }
+
+  async obtenerPerfilUsuario(usuarioId, forceRefresh = false) {
+    return this.cargarPerfilUsuario(usuarioId, forceRefresh)
+  }
+
   /**
    * Invalida toda la caché de usuarios
    */

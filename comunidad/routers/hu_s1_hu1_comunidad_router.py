@@ -1,15 +1,23 @@
 """
-Router para funciones administrativas y de soporte.
-Concentra endpoints que antes estaban como vistas legacy en views.py.
+Router Sprint 1 HU 1 — Validación de comunidad y carga CSV.
+Un router por controlador.
 """
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from comunidad.controladores.hu_s1_hu1_comunidad_controller import ComunidadController
 from comunidad.services import CargaUsuariosService, RegistroUsuarioService
 from comunidad.services.base import BusinessError
 from comunidad.utils import CsrfExemptSessionAuthentication
+
+
+def _controlador():
+    return ComunidadController(
+        carga_usuarios_service=CargaUsuariosService(),
+        registro_usuario_service=RegistroUsuarioService(),
+    )
 
 
 def _manejar_error(error):
@@ -17,29 +25,20 @@ def _manejar_error(error):
 
 
 class SetupAdminRouter(APIView):
-    """Vista temporal para configurar permisos de admin. GET /setup-admin/<username>/"""
+    """GET /setup-admin/<username>/ — Configurar permisos de admin."""
     permission_classes = [AllowAny]
 
     def get(self, request, username):
-        from comunidad.models import Usuario
         try:
-            usuario = Usuario.objects.get(username=username)
-            usuario.is_staff = True
-            usuario.is_superuser = True
-            usuario.save()
-            return Response({
-                "message": f"Usuario '{username}' configurado como admin exitosamente",
-                "is_staff": usuario.is_staff,
-                "is_superuser": usuario.is_superuser,
-                "esStaff": usuario.is_staff,
-                "esSuperusuario": usuario.is_superuser,
-            }, status=status.HTTP_200_OK)
-        except Usuario.DoesNotExist:
-            return Response(
-                {"error": f"El usuario '{username}' no existe"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            resultado = _controlador().configurar_admin(username)
+            return Response(resultado, status=status.HTTP_200_OK)
         except Exception as e:
+            from comunidad.models import Usuario
+            if isinstance(e, Usuario.DoesNotExist):
+                return Response(
+                    {"error": f"El usuario '{username}' no existe"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
             return Response(
                 {"error": f"Error al configurar admin: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -47,15 +46,14 @@ class SetupAdminRouter(APIView):
 
 
 class CargarUsuariosCSVRouter(APIView):
-    """POST /cargar-csv/ — Carga usuarios autorizados desde un CSV."""
+    """POST /cargar-csv/ — Carga usuarios autorizados desde CSV."""
     permission_classes = [AllowAny]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request, format=None):
         archivo = request.FILES.get("archivo_csv") or request.FILES.get("archivo")
-        servicio = CargaUsuariosService()
         try:
-            resultado = servicio.cargar_desde_archivo(archivo)
+            resultado = _controlador().cargar_usuarios_csv(archivo)
             return Response(resultado, status=status.HTTP_200_OK)
         except BusinessError as error:
             return _manejar_error(error)
@@ -72,9 +70,8 @@ class ValidarEmailRegistroRouter(APIView):
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request):
-        servicio = RegistroUsuarioService()
         try:
-            servicio.validar_email(request.data)
-            return Response({"autorizado": True}, status=status.HTTP_200_OK)
+            resultado = _controlador().validar_email_autorizado(request.data)
+            return Response(resultado, status=status.HTTP_200_OK)
         except BusinessError as error:
             return _manejar_error(error)

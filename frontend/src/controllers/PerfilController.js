@@ -3,7 +3,7 @@ import UsuarioRepository from '../repositories/UsuarioRepository.js'
 import PublicacionRepository from '../repositories/PublicacionRepository.js'
 import TruequeRepository from '../repositories/TruequeRepository.js'
 import ResenaRepository from '../repositories/ResenaRepository.js'
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 
 /**
  * PerfilController - Controlador para HU2: Mi perfil
@@ -59,12 +59,9 @@ export default class PerfilController extends BaseController {
    */
   async cargarMisTrueques(forceRefresh = false) {
     return this.execute(async () => {
-      const trueques = await this.truequeRepository.obtenerMisTrueques(forceRefresh)
-      
-      // Actualizar estado reactivo
-      this.misTrueques.value = trueques
-      
-      return trueques
+      const resultado = await this.truequeRepository.obtenerMisTrueques(forceRefresh)
+      this.misTrueques.value = resultado.trueques
+      return resultado
     })
   }
 
@@ -72,9 +69,11 @@ export default class PerfilController extends BaseController {
    * Finaliza un trueque
    * HU4: Confirmar finalización de trueque
    */
-  async finalizarTrueque(truequeId, authController) {
+  async finalizarTrueque(truequeId, authController = null) {
     return this.execute(async () => {
-      authController.requireAuth()
+      if (authController) {
+        authController.requireAuth()
+      }
       
       this.procesandoTruequeId.value = truequeId
       this.feedbackTrueque[truequeId] = null
@@ -166,6 +165,10 @@ export default class PerfilController extends BaseController {
    */
   nombreCalificador(resena) {
     return resena.calificador?.username || 'Usuario'
+  }
+
+  async obtenerMiPerfil(forceRefresh = false) {
+    return this.cargarMiPerfil(forceRefresh)
   }
 
   /**

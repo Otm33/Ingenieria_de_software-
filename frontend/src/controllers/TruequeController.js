@@ -44,15 +44,21 @@ export default class TruequeController extends BaseController {
    */
   async obtenerMatches(publicacionId = null, forceRefresh = false) {
     return this.execute(async () => {
-      const resultado = await this.truequeRepository.obtenerMatches(publicacionId, forceRefresh)
-      
-      // Actualizar estado reactivo
+      const resultado = await this.truequeRepository.obtenerMatchesEnriquecidos(
+        publicacionId,
+        forceRefresh,
+      )
+
       this.matches.value = resultado.matches
       this.mensajeMatches.value = resultado.mensaje
       this.cantidadMatches.value = resultado.cantidad
-      
+
       return resultado
     })
+  }
+
+  async obtenerMatchesEnriquecidos(publicacionId = null, forceRefresh = false) {
+    return this.obtenerMatches(publicacionId, forceRefresh)
   }
 
   /**
@@ -192,6 +198,63 @@ export default class TruequeController extends BaseController {
   elegirModoPropuesta(modo) {
     this.modoPropuesta.value = modo
     this.mostrarSelectorModo.value = false
+  }
+
+  async validarCodigoTrueque(truequeId, codigo) {
+    return this.execute(async () => {
+      const resultado = await this.truequeRepository.validarCodigo(truequeId, codigo)
+      this.truequeRepository.invalidateMisTrueques()
+      this.resenaRepository.invalidateNotificaciones()
+      return resultado
+    })
+  }
+
+  async obtenerMisTrueques(forceRefresh = false) {
+    return this.execute(async () => {
+      return await this.truequeRepository.obtenerMisTrueques(forceRefresh)
+    })
+  }
+
+  async obtenerNotificaciones(incluirLeidas = false, forceRefresh = false) {
+    return this.cargarNotificaciones(incluirLeidas, forceRefresh)
+  }
+
+  async responderPropuestaMultiple(truequeMultipleId, accion) {
+    return this.execute(async () => {
+      const resultado = await this.truequeRepository.responderPropuestaMultiple(
+        truequeMultipleId,
+        accion,
+      )
+      this.resenaRepository.invalidateNotificaciones()
+      return resultado
+    })
+  }
+
+  async obtenerMisTruequesMultiples(forceRefresh = false) {
+    return this.execute(async () => {
+      return await this.truequeRepository.obtenerMisTruequesMultiples(forceRefresh)
+    })
+  }
+
+  async validarCodigoParMultiple(truequeMultipleId, par, codigo) {
+    return this.execute(async () => {
+      return await this.truequeRepository.validarCodigoParMultiple(
+        truequeMultipleId,
+        par,
+        codigo,
+      )
+    })
+  }
+
+  async registrarResenaMultiple(truequeMultipleId, calificadoId, estrellas, comentario) {
+    return this.execute(async () => {
+      return await this.resenaRepository.registrarResenaMultiple(
+        truequeMultipleId,
+        calificadoId,
+        estrellas,
+        comentario,
+      )
+    })
   }
 
   /**

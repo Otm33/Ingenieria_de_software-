@@ -1,24 +1,20 @@
+"""
+Sprint 2 HU 5: Como usuario, quiero concretar los trueques mediante un código alfanumérico
+único que le aparezca al emisor del trueque para que el receptor lo introduzca
+en la opción "Código para Concluir Trueque".
+"""
 from comunidad.dto.request_models import ValidarCodigoRequest
 
 
 class FinalizarTruequeController:
-    """
-    Controlador para la Historia de Usuario: Finalizar Trueque.
-    Cubre: confirmación bilateral y validación de código de finalización.
-    """
+    """Controlador para Sprint 2 HU 5 — Finalización de trueque con código."""
 
     def __init__(self, trueque_service, trueque_repository):
         self._trueque_service = trueque_service
         self._trueque_repo = trueque_repository
 
     def confirmar_finalizacion(self, usuario_orm, trueque_id: int) -> dict:
-        """
-        Registra la confirmación del usuario.
-        Si ambas partes confirmaron, transfiere horas de vida.
-        """
         resultado = self._trueque_service.finalizar_trueque(usuario_orm, trueque_id)
-
-        # Obtener estado actualizado del trueque para la respuesta usando el repositorio inyectado
         trueque = self._trueque_repo.obtener_por_participante(trueque_id, usuario_orm)
 
         return {
@@ -37,7 +33,6 @@ class FinalizarTruequeController:
         trueque_id: int,
         request: ValidarCodigoRequest,
     ) -> dict:
-        """Valida el código de confirmación y finaliza el trueque si es correcto."""
         if not request.codigo or not request.codigo.strip():
             raise ValueError("El código de confirmación es obligatorio.")
 

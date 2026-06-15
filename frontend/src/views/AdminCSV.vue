@@ -71,7 +71,8 @@
 import { inject, ref } from 'vue';
 
 // CAMBIO VISTA: la vista delega la persistencia CSV al controlador instanciado.
-const userController = inject('userController');
+const authController = inject('authController');
+const adminController = inject('adminController');
 const archivo = ref(null);
 const mensaje = ref('');
 const error = ref('');
@@ -110,7 +111,7 @@ const subirArchivo = async () => {
 
   try {
     // CAMBIO VISTA: el archivo pasa por controlador -> servicio -> API Django -> BD.
-    const response = await userController.cargarUsuariosAutorizados(archivo.value);
+    const response = await adminController.cargarArchivoDirecto(archivo.value, authController);
     mensaje.value = response.mensaje || response.message || 'Archivo procesado correctamente.';
   } catch (err) {
     error.value = err.message || 'Error al procesar el archivo.';

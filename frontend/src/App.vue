@@ -153,7 +153,10 @@ import ModalNotificaciones from './components/ModalNotificaciones.vue'
 import ModalPropuesta from './components/ModalPropuesta.vue'
 import ModalResena from './components/ModalResena.vue'
 
-const userController = inject('userController')
+const authController = inject('authController')
+const carteleraController = inject('carteleraController')
+const comunidadController = inject('comunidadController')
+const truequeController = inject('truequeController')
 const usuarioActual = ref(null)
 const cargandoSesion = ref(true)
 const procesandoLogin = ref(false)
@@ -239,9 +242,9 @@ const cargarDatosHu4 = async (opciones = {}) => {
 
   try {
     const [notificacionesData, truequesData, misPublicaciones] = await Promise.all([
-      userController.obtenerNotificaciones(false),
-      userController.obtenerMisTrueques(),
-      userController.obtenerMisPublicaciones(),
+      truequeController.obtenerNotificaciones(false),
+      truequeController.obtenerMisTrueques(),
+      carteleraController.obtenerMisPublicaciones(),
     ])
 
     misTrueques.value = truequesData.trueques || []
@@ -267,7 +270,7 @@ const cargarDatosHu4 = async (opciones = {}) => {
 const abrirModalPropuesta = async (config) => {
   const misPublicaciones = config.misPublicaciones?.length
     ? config.misPublicaciones
-    : await userController.obtenerMisPublicaciones()
+    : await carteleraController.obtenerMisPublicaciones()
 
   Object.assign(propuestaConfig, {
     receptorId: config.receptorId,
@@ -290,11 +293,11 @@ const abrirModalPropuestaDesdeTrueque = async (trueque) => {
   const soyEmisor = Number(trueque.emisor) === Number(usuarioActual.value.id)
   const contraparteId = soyEmisor ? trueque.receptor : trueque.emisor
   const contraparteNombre = obtenerContraparteNombre(trueque)
-  const misPublicaciones = await userController.obtenerMisPublicaciones()
+  const misPublicaciones = await carteleraController.obtenerMisPublicaciones()
   let publicacionesVecino = []
 
   try {
-    const perfil = await userController.obtenerPerfilUsuario(contraparteId)
+    const perfil = await comunidadController.obtenerPerfilUsuario(contraparteId)
     publicacionesVecino = perfil.publicaciones || []
   } catch {
     publicacionesVecino = []
@@ -329,7 +332,7 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
 
   let publicacionesVecino = []
   try {
-    const perfil = await userController.obtenerPerfilUsuario(notif.remitente_id)
+    const perfil = await comunidadController.obtenerPerfilUsuario(notif.remitente_id)
     publicacionesVecino = perfil.publicaciones || []
   } catch {
     publicacionesVecino = []
@@ -338,7 +341,7 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
   await abrirModalPropuesta({
     receptorId: notif.remitente_id,
     receptorNombre: notif.remitente_nombre,
-    misPublicaciones: await userController.obtenerMisPublicaciones(),
+    misPublicaciones: await carteleraController.obtenerMisPublicaciones(),
     publicacionesVecino,
     truequeIdOrigen: notif.trueque_id || null,
   })
@@ -353,7 +356,7 @@ const onPropuestaCreada = async () => {
   const truequeId = propuestaConfig.truequeIdOrigen
   if (truequeId) {
     try {
-      await userController.marcarNotificacionesTruequeLeidas(truequeId)
+      await truequeController.marcarNotificacionesTruequeLeidas(truequeId)
     } catch {
       // Ignorar errores al marcar notificaciones del match.
     }
@@ -398,7 +401,7 @@ provide('hu4', {
 
 const cargarSesion = async () => {
   try {
-    usuarioActual.value = await userController.obtenerSesionActual()
+    usuarioActual.value = await authController.obtenerSesionActual()
     if (usuarioActual.value) {
       await cargarDatosHu4()
     }
@@ -412,7 +415,7 @@ const iniciarSesion = async () => {
   loginError.value = ''
 
   try {
-    usuarioActual.value = await userController.iniciarSesion(loginForm)
+    usuarioActual.value = await authController.iniciarSesion(loginForm)
 
 
 
@@ -431,8 +434,8 @@ const iniciarSesion = async () => {
 const iniciarSesionDespuesDeRegistro = async (credenciales) => {
   try {
     if (credenciales.esNuevoMiembro) {
-      usuarioActual.value = await userController.obtenerSesionActual()
-        || await userController.iniciarSesion(credenciales)
+      usuarioActual.value = await authController.obtenerSesionActual()
+        || await authController.iniciarSesion(credenciales)
       mensajeBienvenida.value = '¡Bienvenido, Miembro Activo! Tu perfil y primer talento ya están publicados en la comunidad.'
       seccionActiva.value = 'perfil'
       tipoRegistroActivo.value = ''
@@ -459,7 +462,7 @@ const mostrarRegistroComercio = () => {
 }
 
 const cerrarSesion = async () => {
-  await userController.cerrarSesion()
+  await authController.cerrarSesion()
   usuarioActual.value = null
   seccionActiva.value = 'cartelera'
   notificacionesVisibles.value = []

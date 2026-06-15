@@ -65,7 +65,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'enviada'])
 
-const userController = inject('userController')
+const resenaController = inject('resenaController')
 const estrellas = ref(5)
 const comentario = ref('')
 const enviando = ref(false)
@@ -107,7 +107,7 @@ const enviar = async () => {
   error.value = ''
 
   try {
-    await userController.registrarResena(props.truequeId, estrellas.value, comentario.value.trim())
+    await resenaController.registrarResena(props.truequeId, estrellas.value, comentario.value.trim())
     limpiarFormulario()
     emit('enviada')
     emit('update:visible', false)

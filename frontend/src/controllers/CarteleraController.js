@@ -1,7 +1,7 @@
 import BaseController from './BaseController.js'
 import PublicacionRepository from '../repositories/PublicacionRepository.js'
 import { ref, reactive } from 'vue'
-import { CATEGORIAS_PUBLICACION } from '../data/catalogoServicios.js'
+import { CATEGORIAS } from '../data/catalogoServicios.js'
 
 /**
  * CarteleraController - Controlador para HU3: Cartelera y filtros
@@ -134,7 +134,7 @@ export default class CarteleraController extends BaseController {
       }
 
       // Validar categoría
-      if (!CATEGORIAS_PUBLICACION[this.formularioPublicacion.categoria]) {
+      if (!CATEGORIAS.includes(this.formularioPublicacion.categoria)) {
         throw new Error('La categoría seleccionada no es válida.')
       }
 
@@ -226,7 +226,7 @@ export default class CarteleraController extends BaseController {
    * Retorna las categorías disponibles
    */
   getCategorias() {
-    return CATEGORIAS_PUBLICACION
+    return CATEGORIAS
   }
 
   /**
@@ -241,6 +241,39 @@ export default class CarteleraController extends BaseController {
    */
   getTotalTalentos() {
     return this.publicaciones.value.filter(p => p.esTalento()).length
+  }
+
+  async crearPublicacionDesdeDatos(formulario) {
+    return this.execute(async () => {
+      if (!formulario.categoria) {
+        throw new Error('La categoría es requerida.')
+      }
+      if (!formulario.titulo) {
+        throw new Error('El título es requerido.')
+      }
+      if (!formulario.descripcion?.trim()) {
+        throw new Error('La descripción es requerida.')
+      }
+      if (formulario.descripcion.length < 10) {
+        throw new Error('La descripción debe tener al menos 10 caracteres.')
+      }
+      if (formulario.tipo === 'TALENTO' && formulario.urgencia !== 'NORMAL') {
+        throw new Error('Los talentos solo pueden tener urgencia Normal.')
+      }
+
+      const publicacion = await this.publicacionRepository.crearPublicacion(formulario)
+      this.misPublicaciones.value.unshift(publicacion)
+      this.publicacionRepository.invalidateCartelera()
+      return publicacion
+    })
+  }
+
+  async obtenerCartelera(filtros = {}, forceRefresh = false) {
+    return this.cargarCartelera(filtros, forceRefresh)
+  }
+
+  async obtenerMisPublicaciones(forceRefresh = false) {
+    return this.cargarMisPublicaciones(forceRefresh)
   }
 
   /**

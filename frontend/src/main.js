@@ -3,16 +3,31 @@ import App from './App.vue'
 import router from './router'
 import './styles.css'
 
-import UserService from './models/UserService.js'
-import UserController from './controllers/UserController.js'
+import AuthController from './controllers/AuthController.js'
+import CarteleraController from './controllers/CarteleraController.js'
+import ComunidadController from './controllers/ComunidadController.js'
+import PerfilController from './controllers/PerfilController.js'
+import TruequeController from './controllers/TruequeController.js'
+import AdminController from './controllers/AdminController.js'
+import ResenaController from './controllers/ResenaController.js'
 
-// CAMBIO MVC/POO: se instancia el modelo/servicio con la API Django que escribe en la BD.
-const userService = new UserService('/api/')
-// CAMBIO MVC/POO: se instancia el controlador y se inyecta en las vistas Vue.
-const userController = new UserController(userService)
+const authController = new AuthController()
+const carteleraController = new CarteleraController()
+const comunidadController = new ComunidadController()
+const perfilController = new PerfilController()
+const truequeController = new TruequeController()
+const adminController = new AdminController()
+const resenaController = new ResenaController()
 
 const app = createApp(App)
-// CAMBIO VISTA: los componentes consumen el controlador, no la BD ni fetch directamente.
-app.provide('userController', userController)
+
+app.provide('authController', authController)
+app.provide('carteleraController', carteleraController)
+app.provide('comunidadController', comunidadController)
+app.provide('perfilController', perfilController)
+app.provide('truequeController', truequeController)
+app.provide('adminController', adminController)
+app.provide('resenaController', resenaController)
+
 app.use(router)
 app.mount('#app')

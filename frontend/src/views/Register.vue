@@ -182,7 +182,8 @@ const props = defineProps({
 
 const emit = defineEmits(['registered']);
 
-const userController = inject('userController');
+const authController = inject('authController');
+const carteleraController = inject('carteleraController');
 const pasos = ['Correo', 'Credenciales', 'Perfil y talento'];
 const pasoActual = ref(1);
 const form = ref({
@@ -260,7 +261,7 @@ const validarEmailPaso1 = async () => {
   registroExitoso.value = false;
 
   try {
-    await userController.validarEmail(form.value.email, props.esComercio);
+    await authController.validarEmail(form.value.email, props.esComercio);
     pasoActual.value = 2;
   } catch (err) {
     feedback.value = err.message || 'El correo no esta autorizado para esta comunidad.';
@@ -275,20 +276,21 @@ const ejecutarRegistroCompleto = async () => {
   registroExitoso.value = false;
 
   try {
-    await userController.registrarUsuario({
+    await authController.registrarUsuario({
       nombre_real: form.value.nombre_real,
       email: form.value.email,
       username: form.value.username,
       password: form.value.password,
+      password_confirm: form.value.password,
       es_comercio: props.esComercio,
     });
 
-    await userController.iniciarSesion({
+    await authController.iniciarSesion({
       username: form.value.username,
       password: form.value.password,
     });
 
-    await userController.crearPublicacion({
+    await carteleraController.crearPublicacionDesdeDatos({
       tipo: 'TALENTO',
       titulo: form.value.titulo,
       descripcion: form.value.descripcion,

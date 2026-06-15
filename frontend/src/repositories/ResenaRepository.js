@@ -105,6 +105,22 @@ export default class ResenaRepository {
   }
 
   /**
+   * Registra una reseña en trueque múltiple
+   */
+  async registrarResenaMultiple(truequeMultipleId, calificadoId, estrellas, comentario) {
+    const result = await this.apiClient.post('resenas-multiples/', {
+      trueque_multiple_id: truequeMultipleId,
+      calificado_id: calificadoId,
+      estrellas,
+      comentario,
+    })
+
+    this.apiClient.invalidate(this.cacheKeys.notificaciones)
+
+    return result
+  }
+
+  /**
    * Invalida la caché de notificaciones
    */
   invalidateNotificaciones() {

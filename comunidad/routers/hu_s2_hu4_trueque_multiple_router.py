@@ -1,25 +1,38 @@
+"""
+Router Sprint 2 HU 4 — Trueques múltiples.
+Un router por controlador.
+"""
+import logging
+
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from comunidad.controladores.hu_trueque_multiple_controller import TruequeMultipleController
-from comunidad.services import TruequeMultipleService
-from comunidad.utils import CsrfExemptSessionAuthentication
+from comunidad.controladores.hu_s2_hu4_trueque_multiple_controller import TruequeMultipleController
+from comunidad.dto.request_models import ResenaMultipleRequest
+from comunidad.services import ResenaMultipleService, TruequeMultipleService
 from comunidad.services.base import BusinessError
+from comunidad.utils import CsrfExemptSessionAuthentication
+
+logger = logging.getLogger(__name__)
+
+
+def _controlador():
+    return TruequeMultipleController(
+        trueque_multiple_service=TruequeMultipleService(),
+        resena_multiple_service=ResenaMultipleService(),
+    )
 
 
 class AceptarTruequeMultipleRouter(APIView):
-    """Router para POST /trueques-multiples/<id>/aceptar/"""
+    """POST /trueques-multiples/<id>/aceptar/"""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request, trueque_multiple_id):
         try:
-            controlador = TruequeMultipleController(
-                trueque_multiple_service=TruequeMultipleService(),
-            )
-            resultado = controlador.aceptar_propuesta(request.user, trueque_multiple_id)
+            resultado = _controlador().aceptar_propuesta(request.user, trueque_multiple_id)
             return Response(resultado, status=status.HTTP_200_OK)
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
@@ -28,16 +41,13 @@ class AceptarTruequeMultipleRouter(APIView):
 
 
 class RechazarTruequeMultipleRouter(APIView):
-    """Router para POST /trueques-multiples/<id>/rechazar/"""
+    """POST /trueques-multiples/<id>/rechazar/"""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request, trueque_multiple_id):
         try:
-            controlador = TruequeMultipleController(
-                trueque_multiple_service=TruequeMultipleService(),
-            )
-            resultado = controlador.rechazar_propuesta(request.user, trueque_multiple_id)
+            resultado = _controlador().rechazar_propuesta(request.user, trueque_multiple_id)
             return Response(resultado, status=status.HTTP_200_OK)
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
@@ -46,25 +56,17 @@ class RechazarTruequeMultipleRouter(APIView):
 
 
 class ValidarCodigoTruequeMultipleRouter(APIView):
-    """Router para POST /trueques-multiples/<id>/validar-codigo/"""
+    """POST /trueques-multiples/<id>/validar-codigo/"""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request, trueque_multiple_id):
         try:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Datos recibidos: {request.data}")
-            
             codigo = request.data.get("codigo")
             par = request.data.get("par")
-            
-            logger.info(f"codigo: {codigo}, par: {par}")
-            
-            controlador = TruequeMultipleController(
-                trueque_multiple_service=TruequeMultipleService(),
+            resultado = _controlador().validar_codigo_par(
+                request.user, trueque_multiple_id, codigo, par
             )
-            resultado = controlador.validar_codigo_par(request.user, trueque_multiple_id, codigo, par)
             return Response(resultado, status=status.HTTP_200_OK)
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
@@ -75,16 +77,13 @@ class ValidarCodigoTruequeMultipleRouter(APIView):
 
 
 class FinalizarTruequeMultipleRouter(APIView):
-    """Router para POST /trueques-multiples/<id>/finalizar/"""
+    """POST /trueques-multiples/<id>/finalizar-par/"""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request, trueque_multiple_id):
         try:
-            controlador = TruequeMultipleController(
-                trueque_multiple_service=TruequeMultipleService(),
-            )
-            resultado = controlador.finalizar_par(request.user, trueque_multiple_id)
+            resultado = _controlador().finalizar_par(request.user, trueque_multiple_id)
             return Response(resultado, status=status.HTTP_200_OK)
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
@@ -93,21 +92,40 @@ class FinalizarTruequeMultipleRouter(APIView):
 
 
 class MisTruequesMultiplesRouter(APIView):
-    """Router para GET /mis-trueques-multiples/"""
+    """GET /mis-trueques-multiples/"""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def get(self, request):
         try:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(f"Listando trueques múltiples para usuario {request.user.id}")
-            
-            controlador = TruequeMultipleController(
-                trueque_multiple_service=TruequeMultipleService(),
-            )
-            resultado = controlador.listar_mis_trueques_multiples(request.user, request)
-            logger.info(f"Trueques múltiples encontrados: {resultado['cantidad']}")
+            resultado = _controlador().listar_mis_trueques_multiples(request.user, request)
             return Response(resultado, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CrearResenaMultipleRouter(APIView):
+    """POST /resenas-multiples/ — Crear reseña de trueque múltiple."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def post(self, request):
+        try:
+            req_data = ResenaMultipleRequest(
+                trueque_multiple_id=request.data.get("trueque_multiple_id"),
+                calificado_id=request.data.get("calificado_id"),
+                estrellas=int(request.data.get("estrellas", 0)),
+                comentario=request.data.get("comentario", ""),
+            )
+            resultado = _controlador().registrar_resena_multiple(request.user, req_data)
+            return Response(resultado, status=status.HTTP_201_CREATED)
+        except BusinessError as e:
+            return Response({"error": e.message}, status=e.status_code)
+        except (ValueError, TypeError) as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {"error": f"Error interno: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

@@ -350,7 +350,7 @@ import { computed, inject, onMounted, reactive, ref } from 'vue'
 import ComercioController from '../controllers/ComercioController.js'
 import ComercioRepository from '../repositories/ComercioRepository.js'
 
-const userController = inject('userController')
+const authController = inject('authController')
 
 const repository = new ComercioRepository()
 const controller = new ComercioController(repository)
@@ -503,7 +503,7 @@ const cargarDatos = async () => {
     const [catalogo, saldo, sesion] = await Promise.all([
       controller.obtenerComercios(),
       controller.obtenerMiSaldoComercial(),
-      userController.obtenerSesionActual(),
+      authController.obtenerSesionActual(),
     ])
 
     comercios.value = catalogo.comercios || []

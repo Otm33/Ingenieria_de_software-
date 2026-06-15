@@ -1,30 +1,36 @@
+"""
+Router Sprint 2 HU 5 — Finalización de trueque con código.
+Un router por controlador.
+"""
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from comunidad.controladores.hu_finalizar_trueque_controller import FinalizarTruequeController
+from comunidad.controladores.hu_s2_hu5_finalizar_trueque_controller import FinalizarTruequeController
 from comunidad.dto.request_models import ValidarCodigoRequest
-from comunidad.services import TruequeService
 from comunidad.repositories_legado import AcuerdoTruequeRepository
-from comunidad.utils import CsrfExemptSessionAuthentication
+from comunidad.services import TruequeService
 from comunidad.services.base import BusinessError
+from comunidad.utils import CsrfExemptSessionAuthentication
+
+
+def _controlador():
+    return FinalizarTruequeController(
+        trueque_service=TruequeService(),
+        trueque_repository=AcuerdoTruequeRepository(),
+    )
 
 
 class FinalizarTruequeRouter(APIView):
-    """Router para POST /trueques/<int:trueque_id>/finalizar/"""
+    """POST /trueques/<trueque_id>/finalizar/ — Confirmar finalización bilateral."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
     def post(self, request, trueque_id):
         try:
-            controlador = FinalizarTruequeController(
-                trueque_service=TruequeService(),
-                trueque_repository=AcuerdoTruequeRepository(),
-            )
-            resultado = controlador.confirmar_finalizacion(request.user, trueque_id)
+            resultado = _controlador().confirmar_finalizacion(request.user, trueque_id)
             return Response(resultado, status=status.HTTP_200_OK)
-
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
         except ValueError as e:
@@ -37,7 +43,7 @@ class FinalizarTruequeRouter(APIView):
 
 
 class ValidarCodigoRouter(APIView):
-    """Router para POST /trueques/<int:trueque_id>/validar-codigo/"""
+    """POST /trueques/<trueque_id>/validar-codigo/ — Validar código de conclusión."""
     permission_classes = [IsAuthenticated]
     authentication_classes = [CsrfExemptSessionAuthentication]
 
@@ -46,14 +52,8 @@ class ValidarCodigoRouter(APIView):
             req_data = ValidarCodigoRequest(
                 codigo=request.data.get("codigo", ""),
             )
-
-            controlador = FinalizarTruequeController(
-                trueque_service=TruequeService(),
-                trueque_repository=AcuerdoTruequeRepository(),
-            )
-            resultado = controlador.validar_codigo(request.user, trueque_id, req_data)
+            resultado = _controlador().validar_codigo(request.user, trueque_id, req_data)
             return Response(resultado, status=status.HTTP_200_OK)
-
         except BusinessError as e:
             return Response({"error": e.message}, status=e.status_code)
         except ValueError as e:

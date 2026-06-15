@@ -91,7 +91,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'creada'])
 
-const userController = inject('userController')
+const truequeController = inject('truequeController')
 const publicacionEmisorId = ref('')
 const publicacionReceptorId = ref('')
 const enviando = ref(false)
@@ -233,7 +233,7 @@ const confirmar = async () => {
   error.value = ''
 
   try {
-    const resultado = await userController.crearPropuesta(
+    const resultado = await truequeController.crearPropuesta(
       props.receptorId,
       publicacionEmisorId.value,
       publicacionReceptorId.value,

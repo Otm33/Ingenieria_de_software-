@@ -138,6 +138,28 @@ export default class ResenaController extends BaseController {
     return `${longitud}/500 caracteres`
   }
 
+  async registrarResena(truequeId, estrellas, comentario) {
+    return this.execute(async () => {
+      if (!truequeId) {
+        throw new Error('El trueque es requerido.')
+      }
+      if (!estrellas || estrellas < 1 || estrellas > 5) {
+        throw new Error('La calificación debe estar entre 1 y 5 estrellas.')
+      }
+      if (!comentario?.trim()) {
+        throw new Error('El comentario es requerido.')
+      }
+      if (comentario.length < 10) {
+        throw new Error('El comentario debe tener al menos 10 caracteres.')
+      }
+      if (comentario.length > 500) {
+        throw new Error('El comentario no puede exceder 500 caracteres.')
+      }
+
+      return await this.resenaRepository.registrarResena(truequeId, estrellas, comentario)
+    })
+  }
+
   /**
    * Invalida toda la caché de reseñas
    */

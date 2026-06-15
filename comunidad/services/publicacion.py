@@ -1,6 +1,6 @@
 from .base import BusinessError, CATEGORIAS_PUBLICACION
 from ..repositories_legado import PublicacionRepository
-from ..validators import contiene_palabra_prohibida
+from ..negocio.validaciones import contiene_palabra_prohibida
 from .matchmaking import MatchmakingService
 from .matchmaking_multiple import MatchmakingMultipleService
 import logging
