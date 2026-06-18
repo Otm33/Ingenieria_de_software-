@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from ..controladores.hu_s2_hu5_finalizar_trueque_controller import FinalizarTruequeController
 from ..dto.request_models import ValidarCodigoRequest
-from ..repositories_legado import AcuerdoTruequeRepository
+from ..repositorios_implementacion import TruequeRepository
 from ..services import TruequeService
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
@@ -18,7 +18,7 @@ from ..utils import CsrfExemptSessionAuthentication
 def _controlador():
     return FinalizarTruequeController(
         trueque_service=TruequeService(),
-        trueque_repository=AcuerdoTruequeRepository(),
+        trueque_repository=TruequeRepository(),
     )
 
 

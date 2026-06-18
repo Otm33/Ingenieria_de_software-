@@ -8,7 +8,7 @@ import Publicacion from '../../models/Publicacion.js'
 export default class PublicacionRepository {
   constructor(apiClient = null) {
     this.apiClient = apiClient || new ApiClient()
-    
+
     // Claves de caché
     this.cacheKeys = {
       cartelera: (filtros) => `cartelera:${JSON.stringify(filtros)}`,
@@ -37,8 +37,8 @@ export default class PublicacionRepository {
         forceRefresh,
       }
     )
-    
-    return data.map((publicacion) => new Publicacion(publicacion))
+
+    return data
   }
 
   /**
@@ -46,12 +46,12 @@ export default class PublicacionRepository {
    */
   async crearPublicacion(formulario) {
     const data = await this.apiClient.post('publicaciones/', formulario)
-    
+
     // Invalidar caché de cartelera y mis publicaciones
     this.apiClient.invalidate(this.cacheKeys.cartelera({}))
     this.apiClient.invalidate(this.cacheKeys.misPublicaciones)
-    
-    return new Publicacion(data)
+
+    return data
   }
 
   /**
@@ -67,8 +67,9 @@ export default class PublicacionRepository {
         forceRefresh,
       }
     )
-    
-    return (data.publicaciones || []).map((publicacion) => new Publicacion(publicacion))
+    // Mapear a instancias del modelo para convertir snake_case → camelCase
+    // (esta_activa → estaActiva, usuario_nombre_real → usuarioNombreReal, etc.)
+    return (data.publicaciones || []).map(p => new Publicacion(p))
   }
 
   /**
@@ -79,13 +80,13 @@ export default class PublicacionRepository {
       `publicaciones/${id}/`,
       { esta_activa: Boolean(estaActiva) }
     )
-    
+
     // Invalidar todas las cachés relacionadas
     this.apiClient.invalidate(this.cacheKeys.cartelera({}))
     this.apiClient.invalidate(this.cacheKeys.misPublicaciones)
     this.apiClient.invalidate(this.cacheKeys.publicacion(id))
-    
-    return new Publicacion(data)
+
+    return data
   }
 
   /**

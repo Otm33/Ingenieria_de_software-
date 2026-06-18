@@ -1,8 +1,7 @@
 """
-Utilidades compartidas por la capa de routers (presentación).
-
-Se extrajeron de views.py para romper la dependencia de los routers
-hacia ese archivo legacy y permitir eliminarlo.
+Paquete de utilidades compartidas de la capa de presentación.
+Re-exporta las utilidades del módulo plano utils.py para mantener
+compatibilidad con los imports existentes.
 """
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.response import Response

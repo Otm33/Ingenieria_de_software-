@@ -2,14 +2,19 @@ import random
 import string
 
 
-def generar_codigo_confirmacion():
-    """Genera un código alfanumérico único de 8 caracteres."""
+def generar_codigo_confirmacion(trueque_repository=None):
+    """Genera un código alfanumérico único de 8 caracteres.
+
+    Args:
+        trueque_repository: repositorio con método existe_codigo_confirmacion().
+            Si no se provee, genera el código sin verificar unicidad en BD.
+    """
     caracteres = string.ascii_uppercase + string.digits
     while True:
         codigo = ''.join(random.choice(caracteres) for _ in range(8))
-        # Verificar que el código no exista
-        from ..models import AcuerdoTrueque
-        if not AcuerdoTrueque.objects.filter(codigo_confirmacion=codigo).exists():
+        if trueque_repository is None:
+            return codigo
+        if not trueque_repository.existe_codigo_confirmacion(codigo):
             return codigo
 
 

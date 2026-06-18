@@ -1,5 +1,31 @@
+"""
+Capa de Dominio — Entidades puras del negocio (Anemic Domain Model).
+
+Arquitectura N-Tier / Clean Architecture:
+    Estas dataclasses representan los objetos del mundo real (usuario, publicación,
+    trueque, reseña, notificación) SIN ningún conocimiento de tecnología, ORM ni
+    frameworks.  Son la "verdad" del sistema.
+
+Regla de pureza:
+    - Solo importan ``dataclasses``, ``datetime`` y ``typing``.
+    - NO importan Django, SQLAlchemy ni cualquier otra dependencia tecnológica.
+    - NO contienen lógica de negocio (eso vive en ``negocio/``).
+    - NO contienen métodos de persistencia (.save(), .delete(), etc.).
+
+Flujo de uso:
+    Los Repositorios (capa de Persistencia) convierten ORM → Entidad de Dominio
+    mediante ``_modelo_a_dominio()`` y las pasan a los Servicios y Controladores.
+    Así las capas superiores nunca tocan objetos ORM de Django.
+
+Campos desnormalizados:
+    Campos como ``usuario_nombre_real`` o ``usuario_promedio_estrellas`` en
+    ``PublicacionDominio`` son poblados por el repositorio al momento de la
+    conversión, para evitar que las capas superiores hagan queries adicionales.
+"""
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional, List
+
 
 
 @dataclass
@@ -13,53 +39,31 @@ class UsuarioDominio:
     es_comercio: bool = False
     saldo_comercial: float = 0.0
     is_active: bool = True
+    is_staff: bool = False
+    is_superuser: bool = False
+    promedio_estrellas: float = 0.0
+    # Sprint 2 HU1: Impacto Social
+    estado_social: str = 'NINGUNO'
+    horas_recibidas_donacion: float = 0.0
+    es_fondo_comunitario: bool = False
 
-    def puede_publicar(self, tipo_publicacion: str, conteo_actual: int) -> tuple[bool, str]:
-        if self.tiene_saldo_critico():
-            return False, "Saldo crítico inferior a -10 horas. No puedes publicar."
 
-        if tipo_publicacion == 'TALENTO' and conteo_actual >= 5:
-            return False, "No puedes tener más de 5 talentos activos publicados simultáneamente."
-
-        if tipo_publicacion == 'NECESIDAD' and conteo_actual >= 3:
-            return False, "No puedes tener más de 3 necesidades activas simultáneamente."
-
-        return True, "Puede publicar"
-
-    def tiene_saldo_critico(self) -> bool:
-        """HU2: Saldo inferior a -10 horas bloquea publicar y modificar."""
-        return self.horas_de_vida < -10.0
-
-    def puede_modificar_publicaciones(self) -> bool:
-        return not self.tiene_saldo_critico()
-
-    def es_comercio_activo(self) -> bool:
-        """HU5: Solo comercios activos pueden emitir vuelto."""
-        return self.es_comercio and self.is_active
-
-    def puede_emitir_vuelto_comercial(self, monto: float) -> tuple[bool, str]:
-        if not self.es_comercio_activo():
-            return False, "Solo los comercios activos pueden emitir vuelto."
-        if self.saldo_comercial < monto:
-            return False, "Saldo comercial insuficiente para emitir vuelto."
-        return True, "Puede emitir vuelto"
-
-    def puede_pagar_con_saldo(self, monto: float) -> tuple[bool, str]:
-        if self.es_comercio:
-            return False, "Los comercios no pueden pagar con saldo comercial."
-        if self.saldo_comercial < monto:
-            return False, "Saldo comercial insuficiente."
-        return True, "Puede pagar con saldo"
-
-    def es_miembro_activo(self, tiene_publicaciones: bool) -> bool:
-        """HU2: Miembro activo si tiene nombre real y al menos una publicación."""
-        nombre = (self.nombre_real or "").strip()
-        return bool(nombre and tiene_publicaciones)
+@dataclass
+class UsuarioAutorizadoDominio:
+    """Representación en dominio de correos autorizados en lista blanca."""
+    id: Optional[int] = None
+    email: str = ""
+    tipo: str = "USUARIO"
 
 
 @dataclass
 class PublicacionDominio:
-    """HU2/HU3: Catálogo de talentos y necesidades."""
+    """HU2/HU3: Catálogo de talentos y necesidades.
+
+    Los campos usuario_nombre_real y usuario_promedio_estrellas son datos
+    desnormalizados que el Repositorio puebla al mapear ORM → Dominio.
+    La entidad de dominio NO accede al ORM directamente.
+    """
     id: Optional[int] = None
     usuario_id: int = 0
     tipo: str = "TALENTO"
@@ -68,38 +72,14 @@ class PublicacionDominio:
     categoria: str = ""
     urgencia: str = "NORMAL"
     esta_activa: bool = True
-
-    def es_talento(self) -> bool:
-        return self.tipo == 'TALENTO'
-
-    def es_necesidad(self) -> bool:
-        return self.tipo == 'NECESIDAD'
-
-    def es_urgente(self) -> bool:
-        """HU3: Urgencia Alta o Crítica."""
-        return self.urgencia in ['ALTA', 'CRITICA']
-
-    def es_critica(self) -> bool:
-        return self.urgencia == 'CRITICA'
-
-    def validar_reglas_negocio(
-        self,
-        usuario: UsuarioDominio,
-        conteo_actual: int,
-        es_nueva: bool = True,
-    ) -> tuple[bool, str]:
-        if not usuario.puede_modificar_publicaciones():
-            return False, "Saldo crítico inferior a -10 horas. Operación bloqueada."
-
-        if self.es_talento() and self.urgencia != "NORMAL":
-            return False, "Los talentos solo pueden tener urgencia Normal."
-
-        if es_nueva and self.esta_activa:
-            puede, msj = usuario.puede_publicar(self.tipo, conteo_actual)
-            if not puede:
-                return False, msj
-
-        return True, "Validación exitosa"
+    es_causa_social: bool = False
+    fecha_creacion: Optional[datetime] = None
+    # Datos del autor: poblados por el repositorio, nunca consultados con ORM aquí
+    usuario_nombre_real: str = ""
+    usuario_promedio_estrellas: float = 0.0
+    usuario_username: str = ""
+    usuario_is_active: bool = True
+    usuario_horas_de_vida: float = 0.0
 
 
 @dataclass
@@ -115,40 +95,6 @@ class AcuerdoTruequeDominio:
     receptor_confirmado: bool = False
     codigo_confirmacion: Optional[str] = None
 
-    def esta_pendiente(self) -> bool:
-        return self.estado == 'PENDIENTE'
-
-    def esta_aceptado(self) -> bool:
-        return self.estado == 'ACEPTADO'
-
-    def esta_en_curso(self) -> bool:
-        return self.estado == 'EN_CURSO'
-
-    def esta_finalizado(self) -> bool:
-        return self.estado == 'FINALIZADO'
-
-    def ambas_partes_confirmaron(self) -> bool:
-        """HU4: Ambas partes confirmaron la finalización."""
-        return self.emisor_confirmado and self.receptor_confirmado
-
-    def puede_confirmar(self, usuario_id: int) -> tuple[bool, str]:
-        """HU4: Verifica si un usuario puede confirmar la finalización."""
-        if not self.esta_en_curso():
-            return False, "Solo se pueden confirmar trueques en curso."
-        if usuario_id in (self.emisor_id, self.receptor_id):
-            return True, "Puede confirmar"
-        return False, "Usuario no es parte del trueque."
-
-    def es_participante(self, usuario_id: int) -> bool:
-        return usuario_id in (self.emisor_id, self.receptor_id)
-
-    def contraparte_id(self, usuario_id: int) -> Optional[int]:
-        if usuario_id == self.emisor_id:
-            return self.receptor_id
-        if usuario_id == self.receptor_id:
-            return self.emisor_id
-        return None
-
 
 @dataclass
 class ResenaDominio:
@@ -159,30 +105,6 @@ class ResenaDominio:
     calificado_id: int = 0
     estrellas: int = 5
     comentario: str = ""
-
-    def calificacion_valida(self) -> bool:
-        return 1 <= self.estrellas <= 5
-
-    def comentario_valido(self) -> tuple[bool, str]:
-        if not self.comentario or not self.comentario.strip():
-            return False, "El comentario no puede estar vacío."
-        if len(self.comentario) > 500:
-            return False, "El comentario no puede exceder 500 caracteres."
-        return True, "Comentario válido"
-
-    def validar(self) -> tuple[bool, str]:
-        if not self.calificacion_valida():
-            return False, "La calificación debe estar entre 1 y 5 estrellas."
-        valido, mensaje = self.comentario_valido()
-        if not valido:
-            return False, mensaje
-        return True, "Reseña válida"
-
-    def es_positiva(self) -> bool:
-        return self.estrellas >= 4
-
-    def es_negativa(self) -> bool:
-        return self.estrellas <= 2
 
 
 @dataclass
@@ -197,15 +119,7 @@ class NotificacionDominio:
     publicacion_original_id: Optional[int] = None
     mensaje: str = ""
     estado: str = "PENDIENTE"
-
-    def esta_leida(self) -> bool:
-        return self.estado == 'LEIDA'
-
-    def es_de_tipo_match(self) -> bool:
-        return self.tipo == 'MATCH'
-
-    def es_de_tipo_propuesta(self) -> bool:
-        return self.tipo == 'PROPUESTA'
+    match_detalle: Optional[list] = None
 
 
 @dataclass
@@ -225,61 +139,55 @@ class AcuerdoTruequeMultipleDominio:
     par1_confirmado: bool = False
     par2_confirmado: bool = False
     par3_confirmado: bool = False
+    fecha_creacion: Optional[datetime] = None
 
-    def todos_aceptaron(self) -> bool:
-        # Comprobar aceptación por emisores únicos del ciclo
-        emisor_map = {
-            1: self.emisor1_id,
-            2: self.emisor2_id,
-            3: self.emisor3_id,
-        }
 
-        unique_emis = set(emisor_map.values())
-        for pid in unique_emis:
-            acepto = False
-            for idx, em_pid in emisor_map.items():
-                if em_pid == pid:
-                    if idx == 1 and self.usuario1_aceptado:
-                        acepto = True
-                        break
-                    if idx == 2 and self.usuario2_aceptado:
-                        acepto = True
-                        break
-                    if idx == 3 and self.usuario3_aceptado:
-                        acepto = True
-                        break
-            if not acepto:
-                return False
-        return True
+@dataclass
+class ResenaMultipleDominio:
+    """HU Trueque Múltiple: Calificación post-trueque múltiple."""
+    id: Optional[int] = None
+    trueque_multiple_id: int = 0
+    calificador_id: int = 0
+    calificado_id: int = 0
+    estrellas: int = 5
+    comentario: str = ""
 
-    def todos_pares_confirmaron(self) -> bool:
-        return self.par1_confirmado and self.par2_confirmado and self.par3_confirmado
 
-    def esta_finalizado(self) -> bool:
-        return self.estado == 'FINALIZADO'
+# ── Sprint 2 HU1: Impacto Social ─────────────────────────────────────────────
 
-    def es_participante(self, usuario_id: int) -> bool:
-        return usuario_id in (
-            self.emisor1_id, self.receptor1_id,
-            self.emisor2_id, self.receptor2_id,
-            self.emisor3_id, self.receptor3_id,
-        )
+@dataclass
+class SolicitudApoyoSocialDominio:
+    """Sprint 2 HU1: Solicitud de apoyo social (entidad de dominio pura)."""
+    id: Optional[int] = None
+    solicitante_id: int = 0
+    categoria: str = ""
+    titulo: str = ""
+    descripcion: str = ""
+    estado: str = "PENDIENTE"
+    horas_recibidas: float = 0.0
+    horas_solidarias_disponibles: float = 0.0
+    horas_solidarias_utilizadas: float = 0.0
+    publicacion_id: Optional[int] = None
+    aprobada_por_id: Optional[int] = None
+    creado_el: Optional[datetime] = None
+    actualizado_el: Optional[datetime] = None
+    # Datos desnormalizados para presentación (poblados por repositorio)
+    solicitante_nombre: str = ""
+    estado_social_solicitante: str = "NINGUNO"
+    necesidad_activa: bool = False
 
-    def obtener_rol(self, usuario_id: int) -> Optional[int]:
-        """Retorna el número de par (1, 2 o 3) en el que participa el usuario."""
-        # Preferir la correspondencia por emisor (cada emisor representa un
-        # participante único del ciclo). Si no coincide, usar receptor como
-        # fallback por compatibilidad.
-        if usuario_id == self.emisor1_id:
-            return 1
-        if usuario_id == self.emisor2_id:
-            return 2
-        if usuario_id == self.emisor3_id:
-            return 3
-        if usuario_id == self.receptor1_id:
-            return 1
-        if usuario_id == self.receptor2_id:
-            return 2
-        if usuario_id == self.receptor3_id:
-            return 3
-        return None
+
+@dataclass
+class DonacionHorasDominio:
+    """Sprint 2 HU1: Registro de donación de Horas de Vida (ledger inmutable)."""
+    id: Optional[int] = None
+    donante_id: int = 0
+    receptor_id: int = 0
+    solicitud_id: Optional[int] = None
+    monto: float = 0.0
+    tipo_destino: str = "CAUSA"
+    fecha: Optional[datetime] = None
+    comprobante_id: Optional[str] = None
+    # Datos desnormalizados para presentación
+    donante_nombre: str = ""
+    receptor_nombre: str = ""

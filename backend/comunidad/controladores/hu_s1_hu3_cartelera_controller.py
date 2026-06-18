@@ -11,24 +11,22 @@ class CarteleraController:
         self._pub_repo = publicacion_repository
 
     def obtener_cartelera(self, categoria=None, urgencias=None) -> list:
-        from django.db.models import Case, IntegerField, Value, When
-        from ..models import Publicacion
-        from ..serializers import PublicacionSerializer
-
-        qs = Publicacion.objects.filter(esta_activa=True)
-        if categoria:
-            qs = qs.filter(categoria=categoria)
-        if urgencias:
-            qs = qs.filter(urgencia__in=urgencias)
-
-        qs = qs.annotate(
-            prioridad_urgencia=Case(
-                When(urgencia="CRITICA", then=Value(3)),
-                When(urgencia="ALTA", then=Value(2)),
-                When(urgencia="NORMAL", then=Value(1)),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-        ).order_by("-prioridad_urgencia", "-id")
-
-        return PublicacionSerializer(qs, many=True).data
+        qs = self._pub_repo.obtener_cartelera(categoria=categoria, urgencias=urgencias)
+        
+        # Serializar manualmente sin usar serializers
+        return [
+            {
+                "id": p.id,
+                "usuario": p.usuario_id,
+                "usuario_nombre_real": p.usuario_nombre_real,
+                "usuario_estrellas": p.usuario_promedio_estrellas,
+                "tipo": p.tipo,
+                "titulo": p.titulo,
+                "descripcion": p.descripcion,
+                "categoria": p.categoria,
+                "urgencia": p.urgencia,
+                "esta_activa": p.esta_activa,
+                "fecha_creacion": p.fecha_creacion.isoformat() if p.fecha_creacion else None,
+            }
+            for p in qs
+        ]

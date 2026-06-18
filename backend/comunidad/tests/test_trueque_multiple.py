@@ -1,6 +1,6 @@
 from django.test import TestCase, override_settings
 
-from ..helpers import crear_usuario, crear_publicacion, CATEGORIA_MANTENIMIENTO
+from .helpers import crear_usuario, crear_publicacion, CATEGORIA_MANTENIMIENTO
 from ..services.matchmaking_multiple import MatchmakingMultipleService
 from ..models import AcuerdoTruequeMultiple
 

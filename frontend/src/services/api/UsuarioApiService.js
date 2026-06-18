@@ -1,5 +1,4 @@
 import ApiClient from './ApiClient.js'
-import User from '../../models/User.js'
 
 /**
  * UsuarioRepository - Repositorio para operaciones de usuarios

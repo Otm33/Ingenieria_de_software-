@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from ..controladores.hu_s1_hu5_comercio_controller import ComercioController
 from ..dto.request_models import EmitirVueltoRequest, PagarConSaldoRequest
-from ..repositorios_implementacion import UsuarioRepository
+from ..repositorios_implementacion import SaldoComercialRepository, UsuarioRepository
 from ..services import ComercioService
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
@@ -19,6 +19,7 @@ def _controlador():
     return ComercioController(
         comercio_service=ComercioService(),
         usuario_repository=UsuarioRepository(),
+        saldo_comercial_repository=SaldoComercialRepository(),
     )
 
 

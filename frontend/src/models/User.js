@@ -1,3 +1,20 @@
+/**
+ * Modelo de Dominio Frontend — Usuario.
+ *
+ * Capa: models/ (Dominio del frontend)
+ *
+ * Representa al usuario autenticado con sus datos del backend Django.
+ * Normaliza campos snake_case (horas_de_vida) a camelCase (horasDeVida).
+ *
+ * Métodos de negocio espejo del backend:
+ * - tieneSaldoCritico(): verifica si horasDeVida < -10 (restricción de publicación)
+ * - esComercioActivo(): verifica si es comercio + staff
+ * - getIniciales() / getAvatarColor(): para renderizar avatares en la UI
+ *
+ * Método estático paraRegistro(): genera el payload para POST /api/registro/
+ *
+ * Flujo: AuthApiService obtiene JSON → new User(data) → useAuthStore → Vistas
+ */
 export default class User {
   // CAMBIO MODELO: esta clase representa el usuario que llega desde Django, no datos simulados.
   constructor({

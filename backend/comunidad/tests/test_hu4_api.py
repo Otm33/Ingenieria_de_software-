@@ -4,7 +4,7 @@ from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase, APIClient
 
-from ..helpers import (
+from .helpers import (
     CATEGORIA_MANTENIMIENTO,
     TITULO_FONTANERIA_GENERAL,
     TITULO_INSTALACION_ELECTRICA,

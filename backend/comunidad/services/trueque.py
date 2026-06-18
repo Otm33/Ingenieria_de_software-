@@ -2,47 +2,56 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
 from .base import BusinessError, generar_codigo_confirmacion
-from ..interfaces import TruequeInterface
-from ..repositories_legado import AcuerdoTruequeRepository, UsuarioRepository, PublicacionRepository
+from ..interfaces.service_interfaces import TruequeInterface
+from ..repositorios_implementacion import TruequeRepository, UsuarioRepository, PublicacionRepository
 from .notificacion import NotificacionService
+from ..negocio.trueque import es_intercambio_mutuo, esta_en_curso, puede_confirmar, ambas_partes_confirmaron, es_participante, contraparte
+from ..negocio.publicacion import es_talento, es_necesidad
 
 
 class TruequeService(TruequeInterface):
     def __init__(self, trueque_repository=None, usuario_repository=None, publicacion_repository=None, notificacion_service=None):
-        self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
+        self.trueque_repository = trueque_repository or TruequeRepository()
         self.usuario_repository = usuario_repository or UsuarioRepository()
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
         self.notificacion_service = notificacion_service or NotificacionService()
 
     @staticmethod
     def _es_intercambio_mutuo(trueque):
-        """Trueque complementario: ambas partes ofrecen un TALENTO (impacto 0 horas)."""
-        # Usar método de negocio de AcuerdoTrueque para verificar si es intercambio mutuo
-        return trueque.es_intercambio_mutuo()
+        """Trueque complementario: ambas partes ofrecen un TALENTO (impacto 0 horas).
 
-    @staticmethod
-    def _identificar_roles_trueque(trueque):
+        Resuelve los tipos de publicación desde relaciones ORM disponibles
+        y delega a la función pura de negocio.
+        """
+        pub_emisor = getattr(trueque, 'publicacion_emisor', None)
+        pub_receptor = getattr(trueque, 'publicacion_receptor', None)
+        tipo_emisor = getattr(pub_emisor, 'tipo', None) if pub_emisor else None
+        tipo_receptor = getattr(pub_receptor, 'tipo', None) if pub_receptor else None
+        return es_intercambio_mutuo(tipo_emisor, tipo_receptor)
+
+    def _identificar_roles_trueque(self, trueque):
         """Determina prestador (TALENTO) y receptor_servicio (NECESIDAD) según publicaciones."""
-        prestador = None
-        receptor_servicio = None
+        prestador_id = None
+        receptor_servicio_id = None
 
-        for usuario, publicacion in (
-            (trueque.emisor, trueque.publicacion_emisor),
-            (trueque.receptor, trueque.publicacion_receptor),
-        ):
-            if not publicacion:
-                continue
-            # Usar métodos de negocio de Publicacion
-            if publicacion.es_talento():
-                prestador = usuario
-            elif publicacion.es_necesidad():
-                receptor_servicio = usuario
+        pub_emisor = self.publicacion_repository.obtener_por_id(trueque.publicacion_emisor_id) if trueque.publicacion_emisor_id else None
+        pub_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor_id) if trueque.publicacion_receptor_id else None
 
-        if prestador and receptor_servicio:
-            return prestador, receptor_servicio
+        if pub_emisor and es_talento(pub_emisor):
+            prestador_id = trueque.emisor_id
+        elif pub_emisor and es_necesidad(pub_emisor):
+            receptor_servicio_id = trueque.emisor_id
+
+        if pub_receptor and es_talento(pub_receptor):
+            prestador_id = trueque.receptor_id
+        elif pub_receptor and es_necesidad(pub_receptor):
+            receptor_servicio_id = trueque.receptor_id
+
+        if prestador_id and receptor_servicio_id:
+            return prestador_id, receptor_servicio_id
 
         # Fallback sin publicaciones: emisor pierde hora, receptor gana hora.
-        return trueque.receptor, trueque.emisor
+        return trueque.receptor_id, trueque.emisor_id
 
     @staticmethod
     def _validar_publicaciones_propuesta(emisor, receptor, pub_emisor, pub_receptor):
@@ -57,11 +66,11 @@ class TruequeService(TruequeInterface):
         if pub_emisor.id == pub_receptor.id:
             raise BusinessError("No se puede usar la misma publicación en ambos lados del trueque.")
 
-        # Usar métodos de negocio de Publicacion para validar tipos
-        tipo_emisor = "TALENTO" if pub_emisor.es_talento() else "NECESIDAD"
-        tipo_receptor = "TALENTO" if pub_receptor.es_talento() else "NECESIDAD"
+        # Usar funciones de negocio de Publicacion para validar tipos
+        tipo_emisor = "TALENTO" if es_talento(pub_emisor) else "NECESIDAD"
+        tipo_receptor = "TALENTO" if es_talento(pub_receptor) else "NECESIDAD"
 
-        if pub_emisor.es_necesidad() and pub_receptor.es_necesidad():
+        if es_necesidad(pub_emisor) and es_necesidad(pub_receptor):
             raise BusinessError(
                 "No se puede proponer un trueque entre dos necesidades. Una necesidad debe cubrirse "
                 "con un talento ofrecido."
@@ -78,12 +87,12 @@ class TruequeService(TruequeInterface):
     @staticmethod
     def _mensaje_propuesta(emisor, pub_emisor, pub_receptor):
         nombre = emisor.nombre_real
-        if pub_emisor.es_talento() and pub_receptor.es_necesidad():
+        if es_talento(pub_emisor) and es_necesidad(pub_receptor):
             return (
                 f"{nombre} te ofrece {pub_emisor.titulo} "
                 f"para tu necesidad de {pub_receptor.titulo}."
             )
-        if pub_emisor.es_necesidad() and pub_receptor.es_talento():
+        if es_necesidad(pub_emisor) and es_talento(pub_receptor):
             return (
                 f"{nombre} solicita tu talento en {pub_receptor.titulo} "
                 f"(necesita {pub_emisor.titulo})."
@@ -103,33 +112,33 @@ class TruequeService(TruequeInterface):
         except ObjectDoesNotExist:
             raise BusinessError("Receptor no encontrado.", status_code=404)
 
+        if not receptor:
+            raise BusinessError("Receptor no encontrado.", status_code=404)
+
         if receptor.id == emisor.id:
             raise BusinessError("No puedes enviarte una propuesta a ti mismo.")
 
         # Obtener las publicaciones si se proporcionan
-        from ..models import Publicacion
         pub_emisor = None
         pub_receptor = None
         
         if publicacion_emisor_id:
-            try:
-                pub_emisor = Publicacion.objects.get(id=publicacion_emisor_id, esta_activa=True)
-            except Publicacion.DoesNotExist:
+            pub_emisor = self.publicacion_repository.obtener_por_id_activa(publicacion_emisor_id)
+            if not pub_emisor:
                 raise BusinessError("Publicación del emisor no encontrada.", status_code=404)
         
         if publicacion_receptor_id:
-            try:
-                pub_receptor = Publicacion.objects.get(id=publicacion_receptor_id, esta_activa=True)
-            except Publicacion.DoesNotExist:
+            pub_receptor = self.publicacion_repository.obtener_por_id_activa(publicacion_receptor_id)
+            if not pub_receptor:
                 raise BusinessError("Publicación del receptor no encontrada.", status_code=404)
 
         self._validar_publicaciones_propuesta(emisor, receptor, pub_emisor, pub_receptor)
 
         trueque = self.trueque_repository.obtener_o_crear_pendiente(
-            emisor=emisor,
-            receptor=receptor,
-            publicacion_emisor=pub_emisor,
-            publicacion_receptor=pub_receptor,
+            emisor_id=emisor.id,
+            receptor_id=receptor.id,
+            publicacion_emisor_id=getattr(pub_emisor, 'id', None),
+            publicacion_receptor_id=getattr(pub_receptor, 'id', None),
         )
 
         if pub_receptor and pub_emisor:
@@ -143,21 +152,23 @@ class TruequeService(TruequeInterface):
                 tipo="PROPUESTA",
             )
 
-        # Marcar todas las notificaciones MATCH de este trueque como leídas para ambos usuarios
-        # Esto evita que ambos usuarios sigan viendo la notificación MATCH después de crear una propuesta
+        # Marcar notificaciones MATCH como leídas para ambos usuarios
         self.notificacion_service.marcar_notificaciones_trueque_leidas_ambos_usuarios(trueque.id, tipos=("MATCH",))
-        
-        return trueque
+
+        return trueque  # AcuerdoTruequeDominio — el controlador solo necesita .id
 
     def responder_propuesta(self, receptor, trueque_id, accion):
         try:
-            trueque = self.trueque_repository.obtener_por_receptor(trueque_id, receptor)
+            trueque = self.trueque_repository.obtener_por_receptor(trueque_id, getattr(receptor, 'id', receptor))
         except ObjectDoesNotExist:
+            raise BusinessError("Propuesta no encontrada.", status_code=404)
+
+        if not trueque:
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
             trueque.estado = "EN_CURSO"
-            trueque.codigo_confirmacion = generar_codigo_confirmacion()
+            trueque.codigo_confirmacion = generar_codigo_confirmacion(self.trueque_repository)
             self.trueque_repository.guardar(trueque)
             self.notificacion_service.actualizar_estado_propuesta(trueque, "ACEPTADA")
             return "Propuesta aceptada. Confirma la finalización cuando el servicio esté completo."
@@ -178,26 +189,30 @@ class TruequeService(TruequeInterface):
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
-            # Usar método de negocio de AcuerdoTrueque para verificar participación
-            if not trueque.participante(usuario):
+            if not trueque:
+                raise BusinessError("Trueque no encontrado.", status_code=404)
+
+            # Usar función de negocio de AcuerdoTrueque para verificar participación
+            if not es_participante(trueque, usuario):
                 raise BusinessError("No eres parte de este trueque.", status_code=403)
 
             # Aceptar tanto trueques en estado ACEPTADO como EN_CURSO
             if getattr(trueque, 'estado', None) not in ("ACEPTADO", "EN_CURSO"):
                 raise BusinessError("El trueque debe estar aceptado para confirmar finalización.", status_code=400)
 
-            # Usar método de negocio de AcuerdoTrueque para verificar si puede confirmar
-            puede_confirmar, mensaje = trueque.puede_confirmar(usuario)
-            if not puede_confirmar:
+            # Usar función de negocio de AcuerdoTrueque para verificar si puede confirmar
+            puede_conf, mensaje = puede_confirmar(trueque, usuario)
+            if not puede_conf:
                 raise BusinessError(mensaje)
 
-            if usuario == trueque.emisor:
+            uid = getattr(usuario, 'id', usuario)
+            if uid == trueque.emisor_id:
                 trueque.emisor_confirmado = True
             else:
                 trueque.receptor_confirmado = True
 
-            # Usar método de negocio de AcuerdoTrueque para verificar si ambas partes confirmaron
-            if not trueque.ambas_partes_confirmaron():
+            # Usar función de negocio de AcuerdoTrueque para verificar si ambas partes confirmaron
+            if not ambas_partes_confirmaron(trueque):
                 self.trueque_repository.guardar(trueque)
                 return {
                     "saldo_transferido": False,
@@ -207,20 +222,21 @@ class TruequeService(TruequeInterface):
                 }
 
             # Pausar las necesidades de ambos usuarios ya que se cumplieron con el trueque
-            from ..models import Publicacion
             # Pausar todas las publicaciones de tipo NECESIDAD del emisor
-            necesidades_emisor = Publicacion.objects.filter(usuario=trueque.emisor, tipo='NECESIDAD', esta_activa=True)
+            necesidades_emisor = self.publicacion_repository.listar_por_usuario_y_tipo_activas(trueque.emisor_id, 'NECESIDAD')
             for pub in necesidades_emisor:
-                pub.esta_activa = False
-                pub.save()
+                self.publicacion_repository.actualizar_estado(pub.id, trueque.emisor_id, False)
             # Pausar todas las publicaciones de tipo NECESIDAD del receptor
-            necesidades_receptor = Publicacion.objects.filter(usuario=trueque.receptor, tipo='NECESIDAD', esta_activa=True)
+            necesidades_receptor = self.publicacion_repository.listar_por_usuario_y_tipo_activas(trueque.receptor_id, 'NECESIDAD')
             for pub in necesidades_receptor:
-                pub.esta_activa = False
-                pub.save()
+                self.publicacion_repository.actualizar_estado(pub.id, trueque.receptor_id, False)
 
-            # Usar método de negocio de AcuerdoTrueque para verificar si es intercambio mutuo
-            if trueque.es_intercambio_mutuo():
+            # Verificar si es intercambio mutuo usando función pura de negocio
+            pub_emisor = self.publicacion_repository.obtener_por_id(trueque.publicacion_emisor_id) if trueque.publicacion_emisor_id else None
+            pub_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor_id) if trueque.publicacion_receptor_id else None
+            tipo_emisor = getattr(pub_emisor, 'tipo', None)
+            tipo_receptor = getattr(pub_receptor, 'tipo', None)
+            if es_intercambio_mutuo(tipo_emisor, tipo_receptor):
                 trueque.estado = "FINALIZADO"
                 self.trueque_repository.guardar(trueque)
                 return {
@@ -233,12 +249,12 @@ class TruequeService(TruequeInterface):
                     ),
                 }
 
-            prestador, receptor_servicio = self._identificar_roles_trueque(trueque)
+            prestador_id, receptor_servicio_id = self._identificar_roles_trueque(trueque)
 
-            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador.id)
-            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio.id)
+            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador_id)
+            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio_id)
 
-            # Usar método de negocio de Usuario para verificar límite de saldo
+            # Usar función de negocio de Usuario para verificar límite de saldo
             if receptor_servicio.horas_de_vida - 1.0 < -10.0:
                 raise BusinessError(
                     "El usuario que recibe el servicio excedería el límite de -10 horas.",
@@ -258,7 +274,6 @@ class TruequeService(TruequeInterface):
                 "mensaje": "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado.",
             }
 
-
     def validar_codigo_finalizacion(self, usuario, trueque_id, codigo):
         """Valida el código de confirmación y finaliza el trueque si es correcto."""
         with transaction.atomic():
@@ -267,12 +282,15 @@ class TruequeService(TruequeInterface):
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
+            if not trueque:
+                raise BusinessError("Trueque no encontrado.", status_code=404)
+
             # Verificar que el usuario es parte del trueque
-            if not trueque.participante(usuario):
+            if not es_participante(trueque, usuario):
                 raise BusinessError("No eres parte de este trueque.", status_code=403)
 
             # Verificar que el trueque está en curso
-            if not trueque.esta_en_curso():
+            if not esta_en_curso(trueque):
                 raise BusinessError("El trueque debe estar en curso para finalizar.", status_code=400)
 
             # Verificar que el código sea correcto
@@ -280,7 +298,8 @@ class TruequeService(TruequeInterface):
                 raise BusinessError("Código de confirmación incorrecto.", status_code=400)
 
             # Verificar que solo el receptor pueda introducir el código
-            if usuario == trueque.emisor:
+            uid = getattr(usuario, 'id', usuario)
+            if uid == trueque.emisor_id:
                 raise BusinessError("Solo el receptor puede introducir el código del emisor.", status_code=403)
 
             # Marcar ambas partes como confirmadas ya que el código valida el trueque
@@ -288,20 +307,21 @@ class TruequeService(TruequeInterface):
             trueque.receptor_confirmado = True
 
             # Pausar las necesidades de ambos usuarios ya que se cumplieron con el trueque
-            from ..models import Publicacion
             # Pausar todas las publicaciones de tipo NECESIDAD del emisor
-            necesidades_emisor = Publicacion.objects.filter(usuario=trueque.emisor, tipo='NECESIDAD', esta_activa=True)
+            necesidades_emisor = self.publicacion_repository.listar_por_usuario_y_tipo_activas(trueque.emisor_id, 'NECESIDAD')
             for pub in necesidades_emisor:
-                pub.esta_activa = False
-                pub.save()
+                self.publicacion_repository.actualizar_estado(pub.id, trueque.emisor_id, False)
             # Pausar todas las publicaciones de tipo NECESIDAD del receptor
-            necesidades_receptor = Publicacion.objects.filter(usuario=trueque.receptor, tipo='NECESIDAD', esta_activa=True)
+            necesidades_receptor = self.publicacion_repository.listar_por_usuario_y_tipo_activas(trueque.receptor_id, 'NECESIDAD')
             for pub in necesidades_receptor:
-                pub.esta_activa = False
-                pub.save()
+                self.publicacion_repository.actualizar_estado(pub.id, trueque.receptor_id, False)
 
-            # Verificar si es intercambio mutuo
-            if trueque.es_intercambio_mutuo():
+            # Verificar si es intercambio mutuo usando función pura de negocio
+            pub_emisor = self.publicacion_repository.obtener_por_id(trueque.publicacion_emisor_id) if trueque.publicacion_emisor_id else None
+            pub_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor_id) if trueque.publicacion_receptor_id else None
+            tipo_emisor = getattr(pub_emisor, 'tipo', None)
+            tipo_receptor = getattr(pub_receptor, 'tipo', None)
+            if es_intercambio_mutuo(tipo_emisor, tipo_receptor):
                 trueque.estado = "FINALIZADO"
                 self.trueque_repository.guardar(trueque)
                 return {
@@ -315,9 +335,9 @@ class TruequeService(TruequeInterface):
                 }
 
             # Para trueques no mutuos, transferir horas
-            prestador, receptor_servicio = self._identificar_roles_trueque(trueque)
-            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador.id)
-            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio.id)
+            prestador_id, receptor_servicio_id = self._identificar_roles_trueque(trueque)
+            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador_id)
+            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio_id)
 
             # Transferir horas
             prestador.horas_de_vida += 1
@@ -330,7 +350,7 @@ class TruequeService(TruequeInterface):
 
             return {
                 "saldo_transferido": True,
-                "impacto_horas": 1 if usuario == prestador else -1,
+                "impacto_horas": 1 if uid == prestador_id else -1,
                 "habilitar_resena": True,
                 "mensaje": "Trueque finalizado exitosamente. Sistema de reseñas habilitado.",
             }

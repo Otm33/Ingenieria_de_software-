@@ -3,7 +3,6 @@ Sprint 2 HU 4: Como usuario, quiero poder realizar Trueques con usuarios que nec
 servicios que yo tengo para que otros me den los servicios que yo necesito a cambio.
 """
 from ..dto.request_models import ResenaMultipleRequest
-from ..dominio.entidades import ResenaDominio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,24 +41,18 @@ class TruequeMultipleController:
         return {"mensaje": mensaje}
 
     def listar_mis_trueques_multiples(self, usuario_orm, request=None) -> dict:
-        from ..repositories_legado import AcuerdoTruequeMultipleRepository
-        from ..serializers import AcuerdoTruequeMultipleSerializer
-
         logger.info(f"Listando trueques múltiples para usuario {usuario_orm.id}")
 
-        try:
-            trueques = AcuerdoTruequeMultipleRepository().listar_por_usuario(usuario_orm)
-        except Exception as e:
-            logger.exception(f"Error al obtener trueques múltiples: {e}")
-            return {"trueques_multiple": [], "cantidad": 0}
+        trueques = self._service.listar_por_usuario(usuario_orm)
 
-        try:
-            data = AcuerdoTruequeMultipleSerializer(
-                trueques, many=True, context={"request": request, "usuario": usuario_orm}
-            ).data
-        except Exception as e:
-            logger.exception(f"Error al serializar trueques múltiples: {e}")
-            return {"trueques_multiple": [], "cantidad": 0}
+        data = [
+            {
+                "id": t.id,
+                "estado": t.estado,
+                "fecha_creacion": t.fecha_creacion.isoformat() if t.fecha_creacion else None,
+            }
+            for t in trueques
+        ]
 
         return {
             "trueques_multiple": data,
@@ -67,16 +60,6 @@ class TruequeMultipleController:
         }
 
     def registrar_resena_multiple(self, usuario_orm, request: ResenaMultipleRequest) -> dict:
-        resena_dominio = ResenaDominio(
-            calificador_id=usuario_orm.id,
-            calificado_id=request.calificado_id,
-            estrellas=request.estrellas,
-            comentario=request.comentario,
-        )
-        es_valida, mensaje = resena_dominio.validar()
-        if not es_valida:
-            raise ValueError(mensaje)
-
         data = {
             "trueque_multiple_id": request.trueque_multiple_id,
             "calificado_id": request.calificado_id,

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..controladores.hu_s1_hu1_comunidad_controller import ComunidadController
+from ..repositorios_implementacion import UsuarioRepository
 from ..services import CargaUsuariosService, RegistroUsuarioService
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
@@ -17,6 +18,7 @@ def _controlador():
     return ComunidadController(
         carga_usuarios_service=CargaUsuariosService(),
         registro_usuario_service=RegistroUsuarioService(),
+        usuario_repository=UsuarioRepository(),
     )
 
 
@@ -33,14 +35,14 @@ class SetupAdminRouter(APIView):
             resultado = _controlador().configurar_admin(username)
             return Response(resultado, status=status.HTTP_200_OK)
         except Exception as e:
-            from ..models import Usuario
-            if isinstance(e, Usuario.DoesNotExist):
+            error_message = str(e)
+            if "no existe" in error_message.lower() or "not found" in error_message.lower():
                 return Response(
                     {"error": f"El usuario '{username}' no existe"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
             return Response(
-                {"error": f"Error al configurar admin: {str(e)}"},
+                {"error": f"Error al configurar admin: {error_message}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

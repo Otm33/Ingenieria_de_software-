@@ -1,288 +1,315 @@
 # TuTrueque
 
-## Arranque rapido en Windows
+Aplicación web para el intercambio de servicios y talentos basado en **horas de vida** y **saldos comerciales**, desarrollada como proyecto de Ingeniería de Software.
 
-Para iniciar todo el proyecto con un solo paso, ejecuta:
+---
+
+## Arranque Rápido (Windows)
 
 ```bat
 iniciar_tutrueque.bat
 ```
 
-El script crea/usa el entorno virtual, instala dependencias, verifica la base `Tu_Trueque`, aplica migraciones, crea el superusuario `admin/admin` si no existe y abre dos terminales: backend en `http://127.0.0.1:8000` y frontend en `http://127.0.0.1:5173`.
-
-Requisitos locales: Python, Node.js/npm y PostgreSQL instalado con usuario `postgres` y clave `admin123`, como esta definido en `config/settings.py`.
-
----
-
-Este es el proyecto de Ingeniería de Software **TuTrueque**, una aplicación web diseñada para el intercambio de servicios y talentos basado en horas de vida y saldos comerciales. El proyecto está completamente dockerizado para facilitar su desarrollo local.
+El script crea/usa el entorno virtual, instala dependencias, aplica migraciones, crea el superusuario `admin/admin` si no existe y abre dos terminales: backend en `http://127.0.0.1:8000` y frontend en `http://127.0.0.1:5173`.
 
 ---
 
 ## Requisitos Previos
 
-Para ejecutar este proyecto localmente, asegúrate de tener instalado el siguiente software en tu sistema:
-* **Python** (versión 3.12 recomendada).
-* **Node.js** (versión 20 recomendada) y npm.
-* **PostgreSQL** (versión 15 recomendada).
-* **Git** (para clonar el repositorio).
+| Software | Versión Recomendada |
+|---|---|
+| Python | 3.12+ |
+| Node.js | 20+ |
+| npm | (incluido con Node.js) |
+| Git | Cualquiera reciente |
+
+> **Nota**: La configuración actual usa **SQLite** por defecto (`db.sqlite3`). Si deseas usar PostgreSQL, modifica `DATABASES` en `backend/config/settings.py` e instala PostgreSQL 15+.
 
 ---
 
-## Configuración de la Base de Datos
+## Instalación Manual
 
-Antes de levantar el proyecto, debes preparar tu servidor de base de datos local:
+### 1. Clonar el repositorio
 
-1. Abre tu gestor de base de datos PostgreSQL (por ejemplo, pgAdmin o la terminal `psql`).
-2. Crea una base de datos en blanco llamada `tutrueque_db`.
-3. Asegúrate de que las credenciales de conexión (usuario y contraseña) en tu archivo local de configuración de Django (`settings.py` o `.env`) coincidan con las de tu servidor local de PostgreSQL.
-
----
-
-## Cómo Correr el Proyecto
-
-### 1. Clonar el repositorio y entrar al proyecto
-```
+```bash
 git clone <URL_DEL_REPOSITORIO>
 cd Ingenieria_de_software_TuTrueque
 ```
-2. Levantar el Backend (Django)Abre una terminal en la carpeta raíz del proyecto para configurar el entorno de Python, que utiliza la versión 4.0 o superior de Django:  Crear y activar el entorno virtual:
-En Windows:
-```
+
+### 2. Backend (Django)
+
+```bash
+# Crear y activar el entorno virtual
 python -m venv venv
+
+# Windows:
 venv\Scripts\activate
-```
-En Linux/macOS:
-```
-python3 -m venv venv
+# Linux/macOS:
 source venv/bin/activate
-```
-Instalar dependencias y migrar la base de datos :
 
-Asegúrate de que el entorno virtual esté activo (deberías ver (venv) en tu terminal) y ejecuta: 
-```
-python manage.py makemigrations
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Aplicar migraciones
 python manage.py migrate
-```
 
-Crear un Superusuario y arrancar el servidor :  
-```
+# Crear superusuario
 python manage.py createsuperuser
+
+# Iniciar el servidor
 python manage.py runserver
 ```
-(Mantén esta terminal abierta. El backend quedará escuchando en el puerto 8000).
 
-3. Levantar el Frontend (Vue)Abre una nueva terminal, entra a la carpeta del frontend e
+El backend quedará escuchando en `http://127.0.0.1:8000`.
 
-inicializa el proyecto de Node:  
-```
+### 3. Frontend (Vue)
+
+En una nueva terminal:
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
-(Mantén esta terminal abierta. El frontend quedará disponible en el puerto 5173) 
+
+El frontend quedará disponible en `http://127.0.0.1:5173`.
+
+---
 
 ## URLs de Acceso Local
 
-Una vez que los contenedores estén corriendo, podrás acceder a los diferentes servicios desde tu navegador:
-
 | Servicio | URL | Descripción |
-| --- | --- | --- |
-| **Frontend** | http://localhost:5173 | Interfaz de usuario (Vue) |
-| **Backend API** | http://localhost:8000/api/ | Endpoints del Backend (Django) |
+|---|---|---|
+| **Frontend** | http://localhost:5173 | Interfaz de usuario (Vue 3) |
+| **Backend API** | http://localhost:8000/api/ | Endpoints REST (Django) |
 | **Admin Panel** | http://localhost:8000/admin/ | Administrador de Django |
 
 ---
 
+## Arquitectura del Proyecto
 
-##  Nota para usuarios de Windows
+El proyecto sigue una **Arquitectura en Capas (N-Tier)** con implementación híbrida de **DDD** y **Clean Architecture**:
 
+```
+Presentación → Negocio/Lógica → Persistencia → Base de Datos
+```
 
-### Usando Git Bash o PowerShell (Sin WSL)
-Si usas la terminal clásica de Windows o Git Bash, el comando docker compose funcionará perfectamente, pero el comando make no viene instalado por defecto en Windows.
+### Estructura del Backend (`backend/comunidad/`)
 
-Para levantar el proyecto: `docker compose up o docker compose up --build`
+```
+comunidad/
+├── dominio/              # Capa de Dominio — Entidades puras (dataclasses)
+│   └── entidades.py      #   UsuarioDominio, PublicacionDominio, AcuerdoTruequeDominio, etc.
+│
+├── negocio/              # Capa de Negocio — Reglas y validaciones puras (sin ORM)
+│   ├── usuario.py        #   tiene_saldo_critico(), puede_publicar(), es_comercio_activo()
+│   ├── publicacion.py    #   validar_reglas_negocio(), es_talento(), es_urgente()
+│   ├── trueque.py        #   puede_confirmar(), ambas_partes_confirmaron(), contraparte_id()
+│   ├── trueque_multiple.py  # todos_aceptaron(), obtener_rol()
+│   ├── resena.py         #   calificacion_valida(), comentario_valido()
+│   ├── notificacion.py   #   esta_leida(), es_de_tipo_match()
+│   └── validaciones/     #   Reglas de contenido (palabras prohibidas)
+│
+├── interfaces/           # Contratos abstractos (ABC) — Inversión de Dependencias
+│   ├── repository_interfaces.py  # IUsuarioRepository, ITruequeRepository, etc.
+│   └── service_interfaces.py     # TruequeInterface, ResenaInterface, etc.
+│
+├── services/             # Capa de Servicios — Orquestación de negocio
+│   ├── trueque.py        #   TruequeService: crear propuestas, finalizar trueques
+│   ├── publicacion.py    #   PublicacionService: CRUD de publicaciones
+│   ├── matchmaking.py    #   MatchmakingService: emparejamiento automático
+│   ├── impacto_social.py #   ImpactoSocialService: solicitudes, donaciones, fondo
+│   ├── notificacion.py   #   NotificacionService: crear/marcar notificaciones
+│   ├── resena.py         #   ResenaService: registrar reseñas
+│   ├── comercio.py       #   ComercioService: vuelto comercial, pagos con saldo
+│   └── base.py           #   BusinessError (excepción base de negocio)
+│
+├── controladores/        # Capa de Presentación — Controladores (traducción y orquestación)
+│   ├── hu_s1_hu2_registro_publicacion_controller.py
+│   ├── hu_s1_hu4_match_trueque_controller.py
+│   ├── hu_s1_hu5_comercio_controller.py
+│   ├── hu_s2_hu1_impacto_social_controller.py
+│   └── ...
+│
+├── routers/              # Capa de Presentación — Routers (Django Views / endpoints HTTP)
+│   ├── hu_s1_hu1_comunidad_router.py
+│   ├── hu_s1_hu2_registro_publicacion_router.py
+│   ├── hu_s1_hu3_cartelera_router.py
+│   └── ...
+│
+├── dto/                  # Data Transfer Objects — Objetos de entrada HTTP
+│   └── request_models.py #   CrearPublicacionRequest, PropuestaRequest, LoginRequest, etc.
+│
+├── repositorios_implementacion.py  # Capa de Persistencia — Implementaciones de repositorios
+├── models.py             # Capa de Base de Datos — Modelos ORM de Django
+├── serializers.py        # Serializadores DRF (Presentación)
+├── urls.py               # Configuración de URLs
+├── admin.py              # Registro de modelos en Django Admin
+├── catalogo_causas_sociales.py     # Whitelist de causas sociales
+│
+├── utils/                # Utilidades compartidas
+│   └── conversor_orm_dominio.py    # Conversor ORM→Dominio para autenticación
+│
+└── tests/                # Tests automatizados
+    ├── test_historias_usuario.py
+    ├── test_hu4.py
+    ├── test_hu4_api.py
+    ├── test_impacto_social.py
+    └── test_trueque_multiple.py
+```
 
-Para crear el superusuario: `docker compose exec backend python manage.py createsuperuser`
+### Flujo de una petición
 
-* **Levantar el proyecto:** `docker compose up --build`
-* **Crear el superusuario:** `docker compose exec backend python manage.py createsuperuser`
+```
+Vue (Frontend) → Pinia Store → ApiService (axios)
+    → Django Router (View) → Controlador → Servicio
+        → Funciones de Negocio (validaciones puras)
+        → Repositorio (ORM ↔ Entidad de Dominio)
+            → Django ORM → Base de Datos
+```
 
+### Estructura del Frontend (`frontend/src/`)
 
-##  Comandos Útiles 
-
-* **Apagar los contenedores:** Presiona `Ctrl + C` en la terminal donde corren o ejecuta `docker compose down`.
-* **Ver logs en tiempo real:** `docker compose logs -f`
-* **Entrar a la terminal del Backend:** `docker compose exec backend bash`
-* **Crear nuevas migraciones de Django:** `docker compose exec backend python manage.py makemigrations`
-
-
+```
+src/
+├── views/                # Páginas/vistas Vue (lo que el usuario ve)
+│   ├── Cartelera.vue     #   Tablero de publicaciones disponibles
+│   ├── Perfil.vue        #   Perfil de usuario e historial
+│   ├── RedComercial.vue  #   Gestión de saldo comercial
+│   ├── ImpactoSocial.vue #   Solicitudes y donaciones
+│   ├── Comunidad.vue     #   Directorio de la comunidad
+│   ├── Register.vue      #   Registro de usuarios
+│   └── AdminCSV.vue      #   Panel de carga CSV (admin)
+│
+├── components/           # Componentes Vue reutilizables
+│   ├── ModalNotificaciones.vue
+│   ├── ModalPropuesta.vue
+│   ├── ModalResena.vue
+│   └── ModalConfirmacion.vue
+│
+├── stores/               # Estado global reactivo (Pinia)
+│   ├── auth.js           #   Sesión, login, logout
+│   ├── cartelera.js      #   Publicaciones y filtros
+│   ├── trueque.js        #   Propuestas, matches, trueques
+│   ├── comercio.js       #   Saldo comercial
+│   ├── impactoSocial.js  #   Impacto social
+│   ├── perfil.js         #   Perfil de usuario
+│   ├── resena.js         #   Reseñas
+│   ├── comunidad.js      #   Directorio de comunidad
+│   └── admin.js          #   Panel de administración
+│
+├── services/api/         # Servicios API (llamadas HTTP al backend)
+│   ├── ApiClient.js      #   Cliente axios base (interceptores, CSRF)
+│   ├── AuthApiService.js
+│   ├── PublicacionApiService.js
+│   ├── TruequeApiService.js
+│   ├── ComercioApiService.js
+│   ├── ImpactoSocialApiService.js
+│   ├── UsuarioApiService.js
+│   ├── ResenaApiService.js
+│   └── AdminApiService.js
+│
+├── models/               # Modelos/clases JavaScript (espejo del dominio)
+│   ├── User.js
+│   ├── Publicacion.js
+│   ├── Trueque.js
+│   └── RequestModels.js  #   DTOs de entrada (equivale a dto/request_models.py)
+│
+├── data/                 # Datos estáticos y catálogos
+│   ├── catalogoServicios.js         # Categorías de servicios
+│   └── catalogoCausasSociales.js    # Causas sociales permitidas
+│
+├── router/               # Configuración de Vue Router (navegación)
+│   └── index.js
+│
+├── App.vue               # Componente raíz de la aplicación
+├── main.js               # Punto de entrada de Vue
+└── styles.css            # Estilos globales
+```
 
 ---
-# Como Probar Las Historias de Usuario (Sprint 1)
 
-### HU 1: Gestionar la comunidad (Administrador)
+## Stack Tecnológico
 
-1) Ingresar a la pagina de el front http://localhost:5173
-2) Click en la pestaña "Panel CSV"
-3) Click en el boton "Seleccionar Archivo"
-4) Buscar y seleccionar el archivo csv en la carpeta raiz de el proyecto llamado "usuarios_autorizados_prueba.csv"
-5) Click en el boton "Procesar Lista"
-6) Click en la pestaña "Registrarse" y usar datos que no estan en el csv
-7) Intentar nuevamente pero con un correo que si este en el csv
+### Backend
+| Tecnología | Versión | Uso |
+|---|---|---|
+| Django | 5.2.15 | Framework web, ORM, autenticación |
+| Django REST Framework | 3.17.1 | Serialización y API REST |
+| django-cors-headers | 4.9.0 | CORS para comunicación con Vue |
+| psycopg2-binary | 2.9.12 | Adaptador PostgreSQL |
+| bcrypt | 5.0.0 | Hashing de contraseñas (BCryptSHA256) |
 
-### HU 2: Gestión y Visualización de Perfiles
+### Frontend
+| Tecnología | Versión | Uso |
+|---|---|---|
+| Vue.js | 3.5.32 | Framework de UI reactivo |
+| Pinia | 3.0.4 | Estado global reactivo |
+| Vue Router | 5.0.7 | Navegación SPA |
+| Vite | 8.0.8 | Bundler y dev server |
 
-1) Registrarse con un correo que si este en el csv
-2) Ingresar a la pagina de el back http://localhost:8000/admin/login/?next=/admin/
-3) Iniciar sesion usando las credenciales de el super usuario
-4) Click en la pestaña "Usuarios"
-5) Click en algun usuario y visualizar los datos
-6) Click en la pestaña "Publicaciones"
-7) Click en la opcion "+Add" y crear 2 talentos con 2 necesidades para usuario(s)
-8) Click en el boton "Save" si solo se quiere crear una publicaciones o "Save and add another" si se quiere crear varias publicaciones
-9) Volver a la pagina de el front http://localhost:5173
-10) Click en la pestaña "Cartelera"
-11) Mostrar los intercambios disponibles y quien lo ofrece
+### Base de Datos
+- **Desarrollo**: SQLite (archivo `db.sqlite3`, configuración por defecto)
+- **Producción**: PostgreSQL 15+ (configurar en `settings.py`)
 
-### HU 3: Cartelera y Filtros
+---
 
-1) Ingresar a la pagina de el front http://localhost:5173
-2) Click en la pestaña "Registrarse" y colocar los datos de un usuario de el csv
-3) Click en la pestaña "Cartelera"
-4) Mostrar las publicaciones disponibles y todos sus atributos
-5) Probar cambiar la categoria y click en el boton "Aplicar Filtros"
-6) Probar cambiar la prioridad y click en el boton "Aplicar Filtros"
-7) click en el boton "Reestableces"
+## Historias de Usuario Implementadas
 
-### HU 4: Emparejamiento y Gestión de Acuerdos (Match)
+### Sprint 1
+| HU | Nombre | Descripción |
+|---|---|---|
+| HU1 | Gestión de la Comunidad | Carga CSV de usuarios autorizados, validación de email |
+| HU2 | Registro y Publicaciones | Registro, login, CRUD de publicaciones (talentos/necesidades) |
+| HU3 | Cartelera y Filtros | Tablero de publicaciones con filtros por categoría y urgencia |
+| HU4 | Emparejamiento (Match) | Matchmaking automático, propuestas, notificaciones, reseñas |
+| HU5 | Red Comercial | Emisión de vuelto, pago con saldo comercial entre comercios |
 
-1) Ingresar a la pagina de el back http://localhost:8000/admin/login/?next=/admin/
-2) Colocar en la terminal este comando que abre la shell: docker compose exec backend python manage.py shell
-3) Insertar los siguientes pasos en la shell
-4) Imprimir las horas de vida de ambos usuarios:
-```
-from django.contrib.auth import get_user_model
-from comunidad.models import AcuerdoTrueque
+### Sprint 2
+| HU | Nombre | Descripción |
+|---|---|---|
+| HU1 | Impacto Social | Solicitudes de apoyo, donaciones de horas, fondo comunitario |
+| HU2 | Perfil e Historial | Perfil público, historial de trueques, directorio de comunidad |
+| HU4 | Trueques Múltiples | Acuerdos de trueque entre 3 participantes (ciclo) |
+| HU5 | Finalización con Código | Confirmación de trueques con código de validación |
 
-Usuario = get_user_model()
+---
 
-user_emisor = Usuario.objects.get(username='nom_usuario1')  # REEMPLAZAR Usuario que solicita el servicio
-user_receptor = Usuario.objects.get(username='nom_usuario2')  # REEMPLAZAR Usuario que presta el servicio
+## Diagramas de Arquitectura
 
-print(f"[SALDO INICIAL] Emisor ({user_emisor.username}): {user_emisor.horas_de_vida} | Receptor ({user_receptor.username}): {user_receptor.horas_de_vida}")
-```
-5) Se simula la crecion de un acuerdo en estado pendiente, Imprime el id y el estado de el acuerdo 
-```
-acuerdo = AcuerdoTrueque.objects.create(
-    emisor=user_emisor, 
-    receptor=user_receptor,
-    estado='PROPUESTO',
-    emisor_confirmado=False,
-    receptor_confirmado=False
-)
-print(f"[REGISTRO] Acuerdo ID {acuerdo.id} creado con éxito en estado: {acuerdo.estado}")
+Los diagramas PlantUML del proyecto se encuentran en la carpeta `Arquitectura/`:
 
-```
-6) Cierre de el acuerdo y transferencia de el tiempo
+- `DiagramaActividades.puml` — Flujo general de actividades
+- `SecuenciaHU1.puml` a `SecuenciaHU5.puml` — Diagramas de secuencia por HU del Sprint 1
 
-```
-acuerdo.emisor_confirmado = True
-acuerdo.receptor_confirmado = True
-acuerdo.estado = 'FINALIZADO'
-acuerdo.save()
+---
 
-if acuerdo.estado == 'FINALIZADO' and acuerdo.emisor_confirmado and acuerdo.receptor_confirmado:
-    user_receptor.horas_de_vida += 1.0  # Incrementa el saldo de quien prestó el servicio
-    user_emisor.horas_de_vida -= 1.0    # Decrementa el saldo de quien recibió el servicio
-    
-    # Persistir los nuevos estados financieros en la base de datos
-    user_receptor.save()
-    user_emisor.save()
+## Tests
 
-print("[PROCESAMIENTO] Transacción de Horas de Vida ejecutada correctamente.")
+```bash
+# Ejecutar todos los tests
+python manage.py test comunidad
 
+# Tests específicos
+python manage.py test comunidad.tests.test_hu4
+python manage.py test comunidad.tests.test_impacto_social
+python manage.py test comunidad.tests.test_trueque_multiple
 ```
 
-7) Verificacion de los saldos de tiempo finales
+---
 
-```
-user_receptor.refresh_from_db()
-user_emisor.refresh_from_db()
+## Comandos Útiles
 
-print(f"[SALDO FINAL] Emisor ({user_emisor.username}): {user_emisor.horas_de_vida} | Receptor ({user_receptor.username}): {user_receptor.horas_de_vida}")
-```
+```bash
+# Crear nuevas migraciones
+python manage.py makemigrations
 
-8) Ingresar a la pagina de el back http://localhost:8000/admin/login/?next=/admin/
-9) Click en la pestaña "Usuarios" y mostrar las horas de vida
-10) Click en la pestaña "Resenas" y añadir los datos de el acuerdo
+# Aplicar migraciones pendientes
+python manage.py migrate
 
-### HU 5: Compensación de Excedentes en Red Comercial
+# Abrir shell de Django
+python manage.py shell
 
-1) Ingresar a la pagina de el back http://localhost:8000/admin/login/?next=/admin/
-2) Colocar en la terminal este comando que abre la shell: docker compose exec backend python manage.py shell
-3) Insertar los siguientes pasos en la shell
-4) Configuración de Actores y Calibración de Estados Iniciales
-
-```
-from django.contrib.auth import get_user_model
-Usuario = get_user_model()
-cliente = Usuario.objects.get(username='nom_usuario_cliente') # REEMPLAZAR
-comercio_A = Usuario.objects.get(username='nom_usuario_comercio1') #REEMPLAZAR
-comercio_B = Usuario.objects.get(username='nom_usuario_comercio2') #REEMPLAZAR
- 
-cliente.saldo_comercial = 0.0
-comercio_A.saldo_comercial = 0.0
-comercio_B.saldo_comercial = 0.0
- 
-print(f"[ESTADO INICIAL CALIBRADO]")
-print(f"-> Cliente (nom_usuario_cliente) - Horas de Vida: {cliente.horas_de_vida} | Saldo Comercial: {cliente.saldo_comercial}")  #REEMPLAZAR
-print(f"-> Comercio A (nom_usuario_comercio1) - Saldo Comercial: {comercio_A.saldo_comercial}") #REEMPLAZAR
-print(f"-> Comercio B (nom_usuario_comercio2) - Saldo Comercial: {comercio_B.saldo_comercial}") #REEMPLAZAR
-
-```
-5) Escenario de "Falta de Vuelto Físico" (Comercio A) Se simuló una transacción comercial donde el `Comercio A` no dispone de cambio físico y emite un vuelto digital de `4.50` unidades. El sistema persistió el incremento del activo digital del usuario y el pasivo del comercio de forma aislada: 
-
-```
-vuelto_faltante = 4.50
-cliente.saldo_comercial += vuelto_faltante
-comercio_A.saldo_comercial -= vuelto_faltante 
-cliente.save()
-comercio_A.save()
-print(f"\n[REGISTRO DE EXCEDENTE EN COMERCIO A]")
-print(f"-> Cliente - Horas de Vida (Aisladas): {cliente.horas_de_vida} | Saldo Comercial: {cliente.saldo_comercial}")
-print(f"-> Comercio A - Balance Comercial: {comercio_A.saldo_comercial}")
-```
-
-6) Interoperabilidad Cruzada de la Red (Pago en Comercio B)
-
-El cliente se desplazó al `Comercio B` (un tercero independiente en la red) y efectuó una compra por un valor de `3.00` unidades debitando su saldo digital acumulado. La base de datos consolidó la operación exitosamente:
-
-```
-monto_pago = 3.00
-cliente.saldo_comercial -= monto_pago
-comercio_B.saldo_comercial += monto_pago
-cliente.save()
-comercio_B.save() 
-print(f"\n[COMPRA CRUZADA EN COMERCIO B]")
-print(f"-> Cliente - Saldo Comercial Restante: {cliente.saldo_comercial}")
-print(f"-> Comercio B - Balance Comercial Actualizado: {comercio_B.saldo_comercial}")
-
-```
-
-7) Balance Final Consolidado. Auditoria Final
-
-```
-cliente.refresh_from_db()
-comercio_A.refresh_from_db()
-comercio_B.refresh_from_db()
- 
-print(f"\n[DEMOSTRACIÓN FINAL HU5 - RED COMERCIAL INTEROPERABLE]")
-print(f"======================================================")
-
-print(f"• Cliente ({cliente.username}) -> Horas de Vida: {cliente.horas_de_vida} (Totalmente Protegidas) ")
-print(f"• Cliente ({cliente.username}) -> Crédito Comercial: {cliente.saldo_comercial} (Listo para usar en la red) ") 
-print(f"• Comercio A (nom_usuario_comercio1) -> Balance Neto: {comercio_A.saldo_comercial} (Deuda registrada por vuelto faltante) ")  #REEMPLAZAR 
-print(f"• Comercio B (nom_usuario_comercio2) -> Balance Neto: {comercio_B.saldo_comercial} (Crédito absorbido por la compra) ")  #REEMPLAZAR
-print(f"======================================================")
-
+# Crear superusuario
+python manage.py createsuperuser
 ```

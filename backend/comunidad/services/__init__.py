@@ -5,7 +5,6 @@ from .base import BusinessError, CATEGORIAS_PUBLICACION, generar_codigo_confirma
 from .carga_usuarios import CargaUsuariosService
 from .registro_usuario import RegistroUsuarioService
 from .publicacion import PublicacionService
-from .cartelera import CarteleraService
 from .trueque import TruequeService
 from .resena import ResenaService
 from .comercio import ComercioService
@@ -14,6 +13,7 @@ from .matchmaking import MatchmakingService
 from .trueque_multiple import TruequeMultipleService
 from .matchmaking_multiple import MatchmakingMultipleService
 from .resena_multiple import ResenaMultipleService
+from .impacto_social import ImpactoSocialService
 
 __all__ = [
     "BusinessError",
@@ -22,7 +22,6 @@ __all__ = [
     "CargaUsuariosService",
     "RegistroUsuarioService",
     "PublicacionService",
-    "CarteleraService",
     "TruequeService",
     "ResenaService",
     "ComercioService",
@@ -31,4 +30,5 @@ __all__ = [
     "TruequeMultipleService",
     "MatchmakingMultipleService",
     "ResenaMultipleService",
+    "ImpactoSocialService",
 ]

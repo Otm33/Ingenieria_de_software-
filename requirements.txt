@@ -1,5 +1,12 @@
-django
-djangorestframework
-django-cors-headers
-psycopg2-binary
-bcrypt
+# Framework web
+Django==5.2.15
+djangorestframework==3.17.1
+
+# CORS (permite que el frontend Vue consuma la API Django)
+django-cors-headers==4.9.0
+
+# PostgreSQL adapter (compatible también con SQLite en desarrollo)
+psycopg2-binary==2.9.12
+
+# Hashing de contraseñas (BCryptSHA256PasswordHasher)
+bcrypt==5.0.0

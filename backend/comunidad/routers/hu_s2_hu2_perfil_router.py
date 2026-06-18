@@ -8,8 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..controladores.hu_s2_hu2_perfil_controller import PerfilHistorialController
-from ..repositories_legado import AcuerdoTruequeRepository
-from ..repositorios_implementacion import PublicacionRepository, ResenaRepository, UsuarioRepository
+from ..repositorios_implementacion import PublicacionRepository, ResenaRepository, TruequeRepository, UsuarioRepository
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
 
@@ -19,7 +18,7 @@ def _controlador():
         usuario_repository=UsuarioRepository(),
         publicacion_repository=PublicacionRepository(),
         resena_repository=ResenaRepository(),
-        trueque_repository=AcuerdoTruequeRepository(),
+        trueque_repository=TruequeRepository(),
     )
 
 

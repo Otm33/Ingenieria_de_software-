@@ -81,12 +81,8 @@ WSGI_APPLICATION = 'backend.config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Tu_Trueque',  # Ojo: cambiado para que coincida con pgAdmin
-        'USER': 'postgres',
-        'PASSWORD': 'admin123',  # Pon aquí la contraseña real que elegiste en la instalación
-        'HOST': '127.0.0.1',
-        'PORT': '5432',
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
@@ -107,6 +103,20 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+
+# Cache configuration for backend
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000
+        }
+    }
+}
+
+# Cache timeout in seconds (5 minutes default)
+CACHE_TIMEOUT = 300
 
 
 # CAMBIO LIMPIEZA: se eliminaron las listas duplicadas de INSTALLED_APPS y MIDDLEWARE.

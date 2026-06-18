@@ -2,31 +2,48 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
+from collections import namedtuple
 
 import logging
 from .base import BusinessError, generar_codigo_confirmacion
-from ..repositories_legado import AcuerdoTruequeMultipleRepository, UsuarioRepository, PublicacionRepository
+from ..repositorios_implementacion import TruequeMultipleRepository, UsuarioRepository, PublicacionRepository
 from .notificacion import NotificacionService
+
+# Proxy ligero de usuario para el algoritmo de detección de ciclos.
+# Evita que el servicio acceda al ORM directamente; se construye
+# desde los campos desnormalizados de PublicacionDominio.
+_UsuarioProxy = namedtuple(
+    '_UsuarioProxy',
+    ['id', 'username', 'nombre_real', 'is_active', 'horas_de_vida']
+)
+from ..negocio.trueque_multiple import (
+    esta_expirado,
+    todos_aceptaron,
+    todos_pares_confirmaron,
+    es_participante,
+    obtener_rol,
+    obtener_pares_del_usuario,
+)
 
 
 class TruequeMultipleService:
     def __init__(self, repository=None, usuario_repository=None, publicacion_repository=None, notificacion_service=None):
-        self.repository = repository or AcuerdoTruequeMultipleRepository()
+        self.repository = repository or TruequeMultipleRepository()
         self.usuario_repository = usuario_repository or UsuarioRepository()
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
         self.notificacion_service = notificacion_service or NotificacionService()
     
+    def listar_por_usuario(self, usuario):
+        """Lista los trueques múltiples de un usuario."""
+        return self.repository.listar_por_usuario(usuario)
+    
     def detectar_ciclo_multiple(self, usuario):
         """Detecta si existe un ciclo A→B→C→A donde el usuario es parte."""
-        from ..models import Publicacion, Usuario
         logger = logging.getLogger(__name__)
         logger.info(f"Iniciando detección de ciclos múltiples para usuario {usuario.id} ({usuario.username})")
         ciclos = []
         # Construir mapas en memoria para reducir queries repetidos
-        publicaciones = list(
-            Publicacion.objects.filter(esta_activa=True)
-            .select_related('usuario')
-        )
+        publicaciones = self.publicacion_repository.obtener_todas_activas()
 
         if not publicaciones:
             return ciclos
@@ -37,13 +54,20 @@ class TruequeMultipleService:
         usuarios_por_id = {}
 
         for pub in publicaciones:
-            uid = pub.usuario.id
-            usuarios_por_id[uid] = pub.usuario
+            uid = pub.usuario_id
+            usuario_proxy = _UsuarioProxy(
+                id=pub.usuario_id,
+                username=pub.usuario_username,
+                nombre_real=pub.usuario_nombre_real,
+                is_active=pub.usuario_is_active,
+                horas_de_vida=pub.usuario_horas_de_vida,
+            )
+            usuarios_por_id[uid] = usuario_proxy
             if pub.tipo == 'TALENTO':
                 talentos_por_usuario.setdefault(uid, []).append(pub)
             else:
                 necesidades_por_usuario.setdefault(uid, []).append(pub)
-                necesidad_usuarios_por_titulo.setdefault(pub.titulo, []).append((pub.usuario, pub))
+                necesidad_usuarios_por_titulo.setdefault(pub.titulo, []).append((usuario_proxy, pub))
 
         # Buscar ciclos A->B->C->A para cualquier usuario y filtrar los que incluyan al usuario pasado
         for uid_a, talentos_a in talentos_por_usuario.items():
@@ -250,23 +274,22 @@ class TruequeMultipleService:
                 logger.exception("Trueque múltiple no encontrado: %s", trueque_id)
                 raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
 
+            if not trueque:
+                raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
+
             # Verificar que el usuario es parte del trueque
-            if not trueque.participante(usuario):
+            if not es_participante(trueque, usuario):
                 logger.warning("Usuario %s no es participante del trueque %s", getattr(usuario, 'id', usuario), trueque_id)
                 raise BusinessError("No eres parte de este trueque múltiple.", status_code=403)
 
             # Verificar que no esté expirado
-            if trueque.esta_expirado():
+            if esta_expirado(trueque):
                 logger.info("Trueque %s expirado, marcando EXPIRADO", trueque_id)
                 trueque.estado = 'EXPIRADO'
                 self.repository.guardar(trueque)
                 raise BusinessError("El trueque múltiple ha expirado.", status_code=400)
 
             # Verificar estado
-            # Aceptar está permitido cuando el trueque está pendiente. Además
-            # permitimos procesar aceptaciones si el estado es ACEPTADO pero
-            # algunas banderas de aceptación aún faltan (caso inconsistente
-            # que queremos poder corregir sin bloquear a los usuarios).
             if trueque.estado not in ('PENDIENTE', 'ACEPTADO'):
                 logger.info("Aceptar solicitud en estado no válido: %s", trueque.estado)
                 raise BusinessError("Solo se pueden aceptar trueques múltiples en estado PENDIENTE o ACEPTADO.", status_code=400)
@@ -278,9 +301,8 @@ class TruequeMultipleService:
             )
 
             # Determinar el rol (preferentemente por emisor) y marcar solo la
-            # bandera correspondiente. Esto evita que la aceptación de un
-            # participante active flags pertenecientes a otros emisores.
-            rol = trueque.obtener_usuario_por_rol(usuario)
+            # bandera correspondiente.
+            rol = obtener_rol(trueque, usuario)
             logger.info("Marcar aceptación para usuario %s en trueque %s como rol %s", getattr(usuario, 'id', usuario), trueque_id, rol)
             if rol == 1:
                 trueque.usuario1_aceptado = True
@@ -291,7 +313,7 @@ class TruequeMultipleService:
             else:
                 logger.error("No se encontró la participación del usuario %s en el trueque %s", getattr(usuario, 'id', usuario), trueque_id)
 
-            # Log: aceptación por participante (útil para depurar duplicados/roles)
+            # Log: aceptación por participante
             participantes = {trueque.emisor1_id, trueque.receptor1_id, trueque.emisor2_id, trueque.receptor2_id, trueque.emisor3_id, trueque.receptor3_id}
             aceptacion_por_participante = {}
             for pid in participantes:
@@ -306,10 +328,9 @@ class TruequeMultipleService:
             logger.debug("Aceptación por participante (trueque=%s): %s", trueque_id, aceptacion_por_participante)
 
             # Si todos los participantes únicos aceptaron, cambiar estado y generar códigos
-            if trueque.todos_aceptaron():
+            if todos_aceptaron(trueque):
                 logger.info("Todos aceptaron trueque %s, generando códigos y marcando ACEPTADO", trueque_id)
                 trueque.estado = 'ACEPTADO'
-                # Generar solo códigos faltantes (evita sobrescribir/duplicar)
                 if not trueque.codigo_par1:
                     trueque.codigo_par1 = generar_codigo_confirmacion()
                 if not trueque.codigo_par2:
@@ -325,7 +346,7 @@ class TruequeMultipleService:
                 trueque_id, trueque.usuario1_aceptado, trueque.usuario2_aceptado, trueque.usuario3_aceptado, trueque.estado,
             )
 
-            if trueque.todos_aceptaron():
+            if todos_aceptaron(trueque):
                 return "Todos los usuarios han aceptado. El trueque múltiple está en curso. Usa los códigos para finalizar cada par."
 
             return "Aceptación registrada. Esperando que los demás usuarios acepten."
@@ -338,8 +359,11 @@ class TruequeMultipleService:
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
             
+            if not trueque:
+                raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
+
             # Verificar que el usuario es parte del trueque
-            if not trueque.participante(usuario):
+            if not es_participante(trueque, usuario):
                 raise BusinessError("No eres parte de este trueque múltiple.", status_code=403)
             
             # Cambiar estado a rechazado
@@ -356,8 +380,11 @@ class TruequeMultipleService:
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
             
+            if not trueque:
+                raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
+
             # Verificar que el usuario es parte del trueque
-            if not trueque.participante(usuario):
+            if not es_participante(trueque, usuario):
                 raise BusinessError("No eres parte de este trueque múltiple.", status_code=403)
             
             # Verificar estado
@@ -369,7 +396,7 @@ class TruequeMultipleService:
                 pares = [par]
             else:
                 # Identificar a qué par pertenece el usuario
-                pares = trueque.obtener_pares_del_usuario(usuario)
+                pares = obtener_pares_del_usuario(trueque, usuario)
                 if not pares:
                     raise BusinessError("No se pudo identificar el par del usuario.", status_code=400)
             
@@ -394,7 +421,7 @@ class TruequeMultipleService:
                 trueque.estado = 'EN_CURSO'
             
             # Finalizar el trueque si todos los pares confirmaron
-            if trueque.todos_pares_confirmaron():
+            if todos_pares_confirmaron(trueque):
                 trueque.estado = 'FINALIZADO'
                 self.repository.guardar(trueque)
                 return "Todos los pares han confirmado. El trueque múltiple ha sido finalizado. Ahora puedes dejar reseñas."
@@ -410,8 +437,11 @@ class TruequeMultipleService:
             except ObjectDoesNotExist:
                 raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
             
+            if not trueque:
+                raise BusinessError("Trueque múltiple no encontrado.", status_code=404)
+
             # Verificar que el usuario es parte del trueque
-            if not trueque.participante(usuario):
+            if not es_participante(trueque, usuario):
                 raise BusinessError("No eres parte de este trueque múltiple.", status_code=403)
             
             # Verificar estado
@@ -419,7 +449,7 @@ class TruequeMultipleService:
                 raise BusinessError("El trueque múltiple debe estar en curso para finalizar pares.", status_code=400)
             
             # Identificar a qué par pertenece el usuario como receptor
-            pares = trueque.obtener_pares_del_usuario(usuario)
+            pares = obtener_pares_del_usuario(trueque, usuario)
             if not pares:
                 raise BusinessError("No se pudo identificar el par del usuario.", status_code=400)
             
@@ -431,18 +461,17 @@ class TruequeMultipleService:
                 publicacion_receptor = None
                 
                 if par == 1:
-                    emisor = trueque.emisor1
-                    receptor = trueque.receptor1
-                    publicacion_receptor = trueque.publicacion_receptor1
-                    
+                    emisor = self.usuario_repository.obtener_por_id(trueque.emisor1_id)
+                    receptor = self.usuario_repository.obtener_por_id(trueque.receptor1_id)
+                    publicacion_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor1_id) if trueque.publicacion_receptor1_id else None
                 elif par == 2:
-                    emisor = trueque.emisor2
-                    receptor = trueque.receptor2
-                    publicacion_receptor = trueque.publicacion_receptor2
+                    emisor = self.usuario_repository.obtener_por_id(trueque.emisor2_id)
+                    receptor = self.usuario_repository.obtener_por_id(trueque.receptor2_id)
+                    publicacion_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor2_id) if trueque.publicacion_receptor2_id else None
                 elif par == 3:
-                    emisor = trueque.emisor3
-                    receptor = trueque.receptor3
-                    publicacion_receptor = trueque.publicacion_receptor3
+                    emisor = self.usuario_repository.obtener_por_id(trueque.emisor3_id)
+                    receptor = self.usuario_repository.obtener_por_id(trueque.receptor3_id)
+                    publicacion_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor3_id) if trueque.publicacion_receptor3_id else None
                 
                 # Verificar que el par esté confirmado
                 if par == 1 and not trueque.par1_confirmado:
@@ -453,7 +482,8 @@ class TruequeMultipleService:
                     continue
                 
                 # Verificar que el usuario sea el receptor
-                if receptor != usuario:
+                uid = getattr(usuario, 'id', usuario)
+                if getattr(receptor, 'id', None) != uid:
                     continue
                 
                 # Verificar saldo del receptor
@@ -472,8 +502,7 @@ class TruequeMultipleService:
                 
                 # Pausar la necesidad del receptor
                 if publicacion_receptor:
-                    publicacion_receptor.esta_activa = False
-                    publicacion_receptor.save()
+                    self.publicacion_repository.actualizar_estado(publicacion_receptor.id, receptor.id, False)
                 
                 pares_finalizados.append(par)
             
@@ -481,7 +510,7 @@ class TruequeMultipleService:
                 raise BusinessError("No hay pares pendientes de finalización para este usuario.", status_code=400)
             
             # Verificar si todos los pares están finalizados
-            if trueque.todos_pares_confirmaron():
+            if todos_pares_confirmaron(trueque):
                 trueque.estado = 'FINALIZADO'
                 self.repository.guardar(trueque)
                 return "Todos los pares han finalizado. Trueque múltiple completado."

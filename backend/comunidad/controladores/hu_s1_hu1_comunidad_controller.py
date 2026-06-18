@@ -7,9 +7,10 @@ mediante una lista de usuarios y comercios autorizados en un archivo CSV.
 class ComunidadController:
     """Controlador para Sprint 1 HU 1 — Validación de comunidad y carga CSV."""
 
-    def __init__(self, carga_usuarios_service, registro_usuario_service):
+    def __init__(self, carga_usuarios_service, registro_usuario_service, usuario_repository=None):
         self._carga_service = carga_usuarios_service
         self._registro_service = registro_usuario_service
+        self._usu_repo = usuario_repository
 
     def cargar_usuarios_csv(self, archivo) -> dict:
         """Procesa el archivo CSV de usuarios/comercios autorizados."""
@@ -22,12 +23,13 @@ class ComunidadController:
 
     def configurar_admin(self, username: str) -> dict:
         """Configura permisos de administrador para un usuario existente."""
-        from ..models import Usuario
+        if not self._usu_repo:
+            raise ValueError("usuario_repository no está configurado.")
 
-        usuario = Usuario.objects.get(username=username)
+        usuario = self._usu_repo.obtener_por_username(username)
         usuario.is_staff = True
         usuario.is_superuser = True
-        usuario.save()
+        self._usu_repo.guardar(usuario)
         return {
             "message": f"Usuario '{username}' configurado como admin exitosamente",
             "is_staff": usuario.is_staff,

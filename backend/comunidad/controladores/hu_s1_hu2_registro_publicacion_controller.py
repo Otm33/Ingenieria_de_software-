@@ -9,8 +9,9 @@ from ..dto.request_models import (
     LoginRequest,
     RegistroUsuarioRequest,
 )
-from ..dominio.entidades import PublicacionDominio, UsuarioDominio
-from ..repositorios_interfaces import IPublicacionRepository, IUsuarioRepository
+from ..interfaces.repository_interfaces import IPublicacionRepository, IUsuarioRepository
+from ..dominio.entidades import UsuarioDominio
+from typing import Union
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,10 +25,14 @@ class RegistroPublicacionController:
         usuario_repository: IUsuarioRepository,
         publicacion_repository: IPublicacionRepository,
         publicacion_service=None,
+        registro_usuario_service=None,
+        matchmaking_service=None,
     ):
         self._usu_repo = usuario_repository
         self._pub_repo = publicacion_repository
         self._pub_service = publicacion_service
+        self._registro_service = registro_usuario_service
+        self._matchmaking_service = matchmaking_service
 
     # --- Autenticación ---
 
@@ -38,48 +43,45 @@ class RegistroPublicacionController:
             raise ValueError("La contraseña es obligatoria.")
         return True, "Credenciales presentes"
 
-    def construir_respuesta_usuario(self, usuario_orm) -> dict:
+    def construir_respuesta_usuario(self, usuario: Union[UsuarioDominio, object]) -> dict:
+        """Construye respuesta de usuario aceptando tanto entidades de dominio como objetos ORM."""
+        # Usar getattr para compatibilidad con ambos tipos
         return {
-            "id": usuario_orm.id,
-            "username": usuario_orm.username,
-            "email": usuario_orm.email,
-            "nombre_real": usuario_orm.nombre_real,
-            "horas_de_vida": float(usuario_orm.horas_de_vida),
-            "es_comercio": usuario_orm.es_comercio,
-            "saldo_comercial": float(usuario_orm.saldo_comercial),
-            "promedio_estrellas": usuario_orm.promedio_estrellas,
-            "esStaff": usuario_orm.is_staff,
-            "esSuperusuario": usuario_orm.is_superuser,
+            "id": getattr(usuario, 'id', None),
+            "username": getattr(usuario, 'username', None),
+            "email": getattr(usuario, 'email', None),
+            "nombre_real": getattr(usuario, 'nombre_real', None),
+            "horas_de_vida": float(getattr(usuario, 'horas_de_vida', 0)),
+            "es_comercio": getattr(usuario, 'es_comercio', False),
+            "saldo_comercial": float(getattr(usuario, 'saldo_comercial', 0)),
+            "promedio_estrellas": getattr(usuario, 'promedio_estrellas', 0),
+            "esStaff": getattr(usuario, 'is_staff', False),
+            "esSuperusuario": getattr(usuario, 'is_superuser', False),
         }
 
-    def obtener_sesion(self, usuario_orm, autenticado: bool) -> dict:
+    def obtener_sesion(self, usuario_dominio: UsuarioDominio = None, autenticado: bool = False) -> dict:
         if not autenticado:
             return {"autenticado": False}
         return {
             "autenticado": True,
-            "usuario": self.construir_respuesta_usuario(usuario_orm),
+            "usuario": self.construir_respuesta_usuario(usuario_dominio),
         }
 
     # --- Registro ---
 
     def registrar_usuario(self, request_data: RegistroUsuarioRequest) -> dict:
-        if not request_data.email or "@" not in request_data.email:
-            raise ValueError("El correo electrónico no es válido.")
-        if len(request_data.password) < 6:
-            raise ValueError("La contraseña debe tener al menos 6 caracteres.")
+        if not self._registro_service:
+            raise ValueError("registro_usuario_service no está configurado.")
 
-        existente = self._usu_repo.obtener_por_email(request_data.email)
-        if existente:
-            raise ValueError("El correo electrónico ya está registrado.")
+        datos = {
+            "username": request_data.username,
+            "email": request_data.email,
+            "nombre_real": request_data.nombre_real,
+            "es_comercio": request_data.es_comercio,
+            "password": request_data.password,
+        }
 
-        nuevo_usuario = UsuarioDominio(
-            username=request_data.username,
-            email=request_data.email,
-            nombre_real=request_data.nombre_real,
-            es_comercio=request_data.es_comercio,
-        )
-
-        usuario_guardado = self._usu_repo.guardar(nuevo_usuario, password=request_data.password)
+        usuario_guardado = self._registro_service.registrar_usuario(datos)
 
         return {
             "id": usuario_guardado.id,
@@ -94,37 +96,23 @@ class RegistroPublicacionController:
     def crear_publicacion(self, usuario_id: int, request_data: CrearPublicacionRequest) -> dict:
         logger.warning(f"RegistroPublicacionController.crear_publicacion para usuario {usuario_id}")
 
+        if not self._pub_service:
+            raise ValueError("publicacion_service no está configurado.")
+
         usuario = self._usu_repo.obtener_por_id(usuario_id)
         if not usuario:
             raise ValueError("Usuario no encontrado.")
 
-        conteo_actual = self._pub_repo.contar_activas_por_tipo(usuario_id, request_data.tipo)
+        datos = {
+            "tipo": request_data.tipo,
+            "titulo": request_data.titulo,
+            "descripcion": request_data.descripcion,
+            "categoria": request_data.categoria,
+            "urgencia": request_data.urgencia,
+            "esta_activa": request_data.esta_activa,
+        }
 
-        nueva_publicacion = PublicacionDominio(
-            usuario_id=usuario_id,
-            tipo=request_data.tipo,
-            titulo=request_data.titulo,
-            descripcion=request_data.descripcion,
-            categoria=request_data.categoria,
-            urgencia=request_data.urgencia,
-            esta_activa=request_data.esta_activa,
-        )
-
-        es_valido, mensaje = nueva_publicacion.validar_reglas_negocio(usuario, conteo_actual, es_nueva=True)
-        if not es_valido:
-            raise ValueError(mensaje)
-
-        pub_guardada = self._pub_repo.guardar(nueva_publicacion)
-
-        try:
-            from ..services import MatchmakingService
-            from ..models import Usuario
-
-            matchmaking_service = MatchmakingService()
-            usuario_django = Usuario.objects.get(id=usuario_id)
-            matchmaking_service.detectar_y_notificar_matches(usuario_django)
-        except Exception as e:
-            logger.exception(f"Error en detección de matches para usuario {usuario_id}: {e}")
+        pub_guardada = self._pub_service.crear_publicacion(usuario, datos)
 
         return {
             "id": pub_guardada.id,
@@ -142,19 +130,36 @@ class RegistroPublicacionController:
         if not isinstance(request.esta_activa, bool):
             raise ValueError("El campo 'esta_activa' es obligatorio y debe ser booleano.")
 
-        from ..serializers import PublicacionSerializer
+        # Validación de permisos: verificar que la publicación pertenece al usuario
+        try:
+            publicacion_verificar = self._pub_repo.obtener_por_id_y_usuario(publicacion_id, usuario_orm.id)
+        except Exception:
+            raise ValueError("No tienes permiso para modificar esta publicación.")
 
         publicacion = self._pub_service.actualizar_estado_publicacion(
             usuario_orm, publicacion_id, request.esta_activa
         )
-        return PublicacionSerializer(publicacion).data
+        return {
+            "id": publicacion.id,
+            "titulo": publicacion.titulo,
+            "tipo": publicacion.tipo,
+            "esta_activa": publicacion.esta_activa,
+        }
 
     def listar_mis_publicaciones(self, usuario_orm) -> dict:
-        from ..models import Publicacion
-        from ..serializers import PublicacionSerializer
-
-        publicaciones = Publicacion.objects.filter(usuario=usuario_orm)
-        data = PublicacionSerializer(publicaciones, many=True).data
+        publicaciones = self._pub_repo.listar_por_usuario(usuario_orm.id)
+        data = [
+            {
+                "id": pub.id,
+                "titulo": pub.titulo,
+                "tipo": pub.tipo,
+                "descripcion": pub.descripcion,
+                "categoria": pub.categoria,
+                "urgencia": pub.urgencia,
+                "esta_activa": pub.esta_activa,
+            }
+            for pub in publicaciones
+        ]
         return {
             "publicaciones": data,
             "cantidad": len(data),

@@ -16,9 +16,10 @@ from ..dto.request_models import (
     RegistroUsuarioRequest,
 )
 from ..repositorios_implementacion import PublicacionRepository, UsuarioRepository
-from ..services import PublicacionService
+from ..services import MatchmakingService, PublicacionService, RegistroUsuarioService
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
+from ..utils.conversor_orm_dominio import usuario_orm_a_dominio
 
 
 def _controlador():
@@ -26,6 +27,8 @@ def _controlador():
         usuario_repository=UsuarioRepository(),
         publicacion_repository=PublicacionRepository(),
         publicacion_service=PublicacionService(),
+        registro_usuario_service=RegistroUsuarioService(),
+        matchmaking_service=MatchmakingService(),
     )
 
 
@@ -36,11 +39,20 @@ class SesionRouter(APIView):
     def get(self, request):
         controlador = _controlador()
         if request.user.is_authenticated and request.user.username == "admin":
-            request.user.is_staff = True
-            request.user.is_superuser = True
-            request.user.save()
+            repo = UsuarioRepository()
+            admin_dom = repo.obtener_por_username("admin")
+            if admin_dom and (not admin_dom.is_staff or not admin_dom.is_superuser):
+                admin_dom.is_staff = True
+                admin_dom.is_superuser = True
+                repo.guardar(admin_dom)
+        
+        # Convertir usuario ORM a dominio antes de pasar al controlador
+        usuario_dominio = None
+        if request.user.is_authenticated:
+            usuario_dominio = usuario_orm_a_dominio(request.user)
+        
         resultado = controlador.obtener_sesion(
-            usuario_orm=request.user if request.user.is_authenticated else None,
+            usuario_dominio=usuario_dominio,
             autenticado=request.user.is_authenticated,
         )
         return Response(resultado, status=status.HTTP_200_OK)
@@ -70,9 +82,12 @@ class LoginRouter(APIView):
                 )
 
             if usuario.username == "admin":
-                usuario.is_staff = True
-                usuario.is_superuser = True
-                usuario.save()
+                repo = UsuarioRepository()
+                admin_dom = repo.obtener_por_username("admin")
+                if admin_dom and (not admin_dom.is_staff or not admin_dom.is_superuser):
+                    admin_dom.is_staff = True
+                    admin_dom.is_superuser = True
+                    repo.guardar(admin_dom)
 
             login(request, usuario)
             return Response(

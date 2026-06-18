@@ -1,6 +1,4 @@
 import ApiClient from './ApiClient.js'
-import User from '../../models/User.js'
-import Publicacion from '../../models/Publicacion.js'
 
 /**
  * TruequeRepository - Repositorio para operaciones de trueques
@@ -126,7 +124,7 @@ export default class TruequeRepository {
   }
 
   /**
-   * Obtiene matches enriquecidos con modelos de dominio
+   * Obtiene matches enriquecidos con datos crudos
    */
   async obtenerMatchesEnriquecidos(publicacionId = null, forceRefresh = false) {
     const params = new URLSearchParams()
@@ -146,13 +144,9 @@ export default class TruequeRepository {
     )
 
     const matches = (data.matches || []).map((match) => ({
-      usuario: new User(match.usuario),
-      talentosCoincidentes: (match.talentos_coincidentes || []).map(
-        (publicacion) => new Publicacion(publicacion),
-      ),
-      necesidadesCoincidentes: (match.necesidades_coincidentes || []).map(
-        (publicacion) => new Publicacion(publicacion),
-      ),
+      usuario: match.usuario,
+      talentosCoincidentes: match.talentos_coincidentes || [],
+      necesidadesCoincidentes: match.necesidades_coincidentes || [],
       publicacionesSugeridas: match.publicaciones_sugeridas || [],
     }))
 

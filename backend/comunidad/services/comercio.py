@@ -3,8 +3,9 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
 from .base import BusinessError
-from ..interfaces import ComercioInterface
-from ..repositories_legado import UsuarioRepository, SaldoComercialRepository
+from ..interfaces.service_interfaces import ComercioInterface
+from ..repositorios_implementacion import UsuarioRepository, SaldoComercialRepository
+from ..negocio.usuario import es_comercio_activo, puede_emitir_vuelto_comercial, puede_pagar_con_saldo
 
 
 class ComercioService(ComercioInterface):
@@ -15,7 +16,7 @@ class ComercioService(ComercioInterface):
 
     def emitir_vuelto(self, comercio, datos):
         # Usar método de negocio de Usuario para verificar si es comercio activo
-        if not comercio.es_comercio_activo():
+        if not es_comercio_activo(comercio):
             raise BusinessError("Solo comercios activos pueden emitir saldos comerciales.", status_code=403)
 
         cliente_id = datos.get("cliente_id")
@@ -30,7 +31,7 @@ class ComercioService(ComercioInterface):
         monto, valor_producto, monto_recibido = self._resolver_excedente_emision(datos)
 
         # Usar método de negocio de Usuario para validar saldo comercial
-        puede_emitir, mensaje = comercio.puede_emitir_vuelto_comercial(monto)
+        puede_emitir, mensaje = puede_emitir_vuelto_comercial(comercio, monto)
         if not puede_emitir:
             raise BusinessError(mensaje, status_code=403)
 
@@ -40,15 +41,19 @@ class ComercioService(ComercioInterface):
             except ObjectDoesNotExist:
                 raise BusinessError("El cliente especificado no existe.", status_code=404)
 
+            if not cliente:
+                raise BusinessError("El cliente especificado no existe.", status_code=404)
+
             if cliente.es_comercio:
                 raise BusinessError("No se puede emitir vuelto a otro comercio.")
 
-            cliente.saldo_comercial += monto
-            comercio.saldo_comercial -= monto
+            monto_float = float(monto)
+            cliente.saldo_comercial += monto_float
+            comercio.saldo_comercial = float(comercio.saldo_comercial) - monto_float
             self.usuario_repository.guardar(cliente)
             self.usuario_repository.guardar(comercio)
             movimiento = self.saldo_repository.crear_movimiento(
-                comercio, cliente, monto, "EMISION",
+                comercio.id, cliente.id, monto, "EMISION",
                 valor_producto=valor_producto,
                 monto_recibido=monto_recibido,
             )
@@ -56,9 +61,14 @@ class ComercioService(ComercioInterface):
 
         return {
             "mensaje": "Saldo a favor comercial emitido correctamente (Inalterable en horas de vida).",
-            "comprobante": movimiento,
-            "saldo_cliente": cliente.saldo_comercial,
-            "saldo_comercio": comercio.saldo_comercial,
+            "comprobante": {
+                "id": movimiento.id,
+                "monto_excedente": float(movimiento.monto_excedente),
+                "tipo_movimiento": movimiento.tipo_movimiento,
+                "fecha": movimiento.fecha.isoformat() if movimiento.fecha else None,
+            },
+            "saldo_cliente": float(cliente.saldo_comercial),
+            "saldo_comercio": float(comercio.saldo_comercial),
         }
 
     def pagar_con_saldo(self, cliente, datos):
@@ -73,7 +83,7 @@ class ComercioService(ComercioInterface):
             raise BusinessError("No puede pagar en su propio comercio.")
 
         # Usar método de negocio de Usuario para validar saldo comercial
-        puede_pagar, mensaje = cliente.puede_pagar_con_saldo(monto)
+        puede_pagar, mensaje = puede_pagar_con_saldo(cliente, monto)
         if not puede_pagar:
             raise BusinessError(mensaje)
 
@@ -85,49 +95,47 @@ class ComercioService(ComercioInterface):
             except ObjectDoesNotExist:
                 raise BusinessError("Comercio no encontrado.", status_code=404)
 
+            if not comercio:
+                raise BusinessError("Comercio no encontrado.", status_code=404)
+
             # Usar método de negocio de Usuario para verificar si es comercio activo
-            if not comercio.es_comercio_activo():
+            if not es_comercio_activo(comercio):
                 raise BusinessError("El usuario de destino no es un comercio activo.")
 
-            cliente_bloqueado.saldo_comercial -= monto
-            comercio.saldo_comercial += monto
+            cliente_bloqueado.saldo_comercial -= float(monto)
+            comercio.saldo_comercial += float(monto)
             self.usuario_repository.guardar(cliente_bloqueado)
             self.usuario_repository.guardar(comercio)
-            movimiento = self.saldo_repository.crear_movimiento(comercio, cliente_bloqueado, monto, "PAGO")
+            movimiento = self.saldo_repository.crear_movimiento(comercio.id, cliente_bloqueado.id, monto, "PAGO")
             self.movimientos.append(movimiento)
 
         return {
             "mensaje": "Pago procesado con exito utilizando saldo comercial.",
-            "comprobante": movimiento,
-            "saldo_restante": cliente_bloqueado.saldo_comercial,
-            "saldo_comercio": comercio.saldo_comercial,
+            "comprobante": {
+                "id": movimiento.id,
+                "monto_excedente": float(movimiento.monto_excedente),
+                "tipo_movimiento": movimiento.tipo_movimiento,
+                "fecha": movimiento.fecha.isoformat() if movimiento.fecha else None,
+            },
+            "saldo_restante": float(cliente_bloqueado.saldo_comercial),
+            "saldo_comercio": float(comercio.saldo_comercial),
         }
 
     def listar_comercios(self):
         comercios = self.usuario_repository.listar_comercios_activos()
         # Filtrar usando método de negocio de Usuario para asegurar que sean comercios activos
-        return [c for c in comercios if c.es_comercio_activo()]
+        return [c for c in comercios if es_comercio_activo(c)]
 
     def listar_clientes(self, termino_busqueda=None):
         # Listar usuarios que no son comercios
-        from ..models import Usuario
-        from django.db.models import Q
-
-        clientes = Usuario.objects.filter(
-            es_comercio=False,
-            is_active=True,
-            is_staff=False,
-            is_superuser=False,
-        ).order_by('nombre_real', 'username')
+        clientes = self.usuario_repository.listar_no_comercios()
 
         if termino_busqueda:
             termino = str(termino_busqueda).strip()
             if termino:
-                clientes = clientes.filter(
-                    Q(nombre_real__icontains=termino) | Q(username__icontains=termino)
-                )
+                clientes = [c for c in clientes if termino.lower() in c.nombre_real.lower() or termino.lower() in c.username.lower()]
 
-        return list(clientes)
+        return clientes
 
     def _obtener_monto(self, valor):
         if valor in [None, ""]:

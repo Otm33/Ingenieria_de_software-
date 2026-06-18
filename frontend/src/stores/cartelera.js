@@ -36,18 +36,18 @@ export const useCarteleraStore = defineStore('cartelera', () => {
   async function cargarCartelera(filtros = {}, forceRefresh = false) {
     loading.value = true
     error.value = null
-    
+
     try {
       const publicacionesData = await publicacionApiService.obtenerCartelera(
         filtros,
         forceRefresh
       )
-      
+
       // Actualizar estado reactivo
       publicaciones.value = publicacionesData
       filtrosAplicados.categoria = filtros.categoria || ''
       filtrosAplicados.urgencias = filtros.urgencias || []
-      
+
       return publicacionesData
     } catch (err) {
       error.value = err.message || 'Error desconocido'
@@ -63,11 +63,11 @@ export const useCarteleraStore = defineStore('cartelera', () => {
   async function aplicarFiltros() {
     const filtros = {
       categoria: filtrosAplicados.categoria || undefined,
-      urgencias: filtrosAplicados.urgencias.length > 0 
-        ? filtrosAplicados.urgencias 
+      urgencias: filtrosAplicados.urgencias.length > 0
+        ? filtrosAplicados.urgencias
         : undefined
     }
-    
+
     return cargarCartelera(filtros, true)
   }
 
@@ -101,13 +101,13 @@ export const useCarteleraStore = defineStore('cartelera', () => {
   async function cargarMisPublicaciones(forceRefresh = false) {
     loading.value = true
     error.value = null
-    
+
     try {
       const publicacionesData = await publicacionApiService.obtenerMisPublicaciones(forceRefresh)
-      
+
       // Actualizar estado reactivo
       misPublicaciones.value = publicacionesData
-      
+
       return publicacionesData
     } catch (err) {
       error.value = err.message || 'Error desconocido'
@@ -123,14 +123,14 @@ export const useCarteleraStore = defineStore('cartelera', () => {
   async function crearPublicacion(authStore, formData = null) {
     loading.value = true
     error.value = null
-    
+
     try {
       // Requerir autenticación
       authStore.requireAuth()
-      
+
       // Usar formData proporcionado o formularioPublicacion por defecto
       const form = formData || formularioPublicacion
-      
+
       // Validaciones frontend
       if (!form.categoria) {
         throw new Error('La categoría es requerida.')
@@ -154,8 +154,8 @@ export const useCarteleraStore = defineStore('cartelera', () => {
       }
 
       // Validar urgencia para talentos
-      if (form.tipo === 'TALENTO' && 
-          formularioPublicacion.urgencia !== 'NORMAL') {
+      if (form.tipo === 'TALENTO' &&
+        formularioPublicacion.urgencia !== 'NORMAL') {
         throw new Error('Los talentos solo pueden tener urgencia Normal.')
       }
 
@@ -168,16 +168,16 @@ export const useCarteleraStore = defineStore('cartelera', () => {
       }
 
       const publicacion = await publicacionApiService.crearPublicacion(datos)
-      
+
       // Actualizar caché local
       misPublicaciones.value.unshift(publicacion)
-      
+
       // Invalidar caché de cartelera
       publicacionApiService.invalidateCartelera()
-      
+
       // Salir del modo de publicación
       desactivarModoPublicar()
-      
+
       return publicacion
     } catch (err) {
       error.value = err.message || 'Error desconocido'
@@ -194,23 +194,28 @@ export const useCarteleraStore = defineStore('cartelera', () => {
     loading.value = true
     error.value = null
     procesandoEstadoId.value = publicacionId
-    
+
     try {
-      const publicacion = await publicacionApiService.actualizarEstadoPublicacion(
+      // Llamar a la API (el valor real queda guardado en BD)
+      await publicacionApiService.actualizarEstadoPublicacion(
         publicacionId,
         estaActiva
       )
-      
-      // Actualizar estado local con nueva referencia para reactividad
-      misPublicaciones.value = misPublicaciones.value.map(p => 
-        p.id === publicacionId ? publicacion : p
+
+      // Actualizar estado local en camelCase para que Vue reactive correctamente.
+      // La respuesta cruda del PATCH solo trae esta_activa (snake_case) y no todos
+      // los campos del modelo, por lo que actualizamos el objeto existente.
+      misPublicaciones.value = misPublicaciones.value.map(p =>
+        p.id === publicacionId
+          ? { ...p, estaActiva, esta_activa: estaActiva }
+          : p
       )
-      
-      // Invalidar caché
+
+      // Invalidar caché del API Client
       publicacionApiService.invalidateCartelera()
       publicacionApiService.invalidateMisPublicaciones()
-      
-      return publicacion
+
+      return { id: publicacionId, estaActiva }
     } catch (err) {
       error.value = err.message || 'Error desconocido'
       throw err
@@ -283,7 +288,7 @@ export const useCarteleraStore = defineStore('cartelera', () => {
     procesandoEstadoId,
     loading,
     error,
-    
+
     // Acciones
     cargarCartelera,
     aplicarFiltros,

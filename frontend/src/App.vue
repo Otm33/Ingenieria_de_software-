@@ -15,11 +15,15 @@
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'red-comercial'" title="Red Comercial">
             <span>Red Comercial</span>
           </button>
+          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'impacto-social'" title="Impacto Social">
+            <span>Impacto Social</span>
+          </button>
         </nav>
 
         <nav v-if="authStore.usuarioActual?.esStaff || authStore.usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
           <button class="nav__link" type="button" @click="seccionActiva = 'csv'">Usuarios CSV</button>
-          <a class="nav__link" href="http://127.0.0.1:8000/admin/" target="_blank">Admin Django</a>
+          <button class="nav__link" type="button" @click="seccionActiva = 'admin-impacto-social'">Gestión Impacto Social</button>
+          <button class="nav__link" type="button" @click="seccionActiva = 'admin-panel'">Panel Admin</button>
         </nav>
 
         <div v-if="authStore.usuarioActual" class="session-box">
@@ -104,8 +108,11 @@
         <Perfil v-else-if="seccionActiva === 'perfil'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
         <RedComercial v-else-if="seccionActiva === 'red-comercial'" :usuario-actual="authStore.usuarioActual" />
+        <ImpactoSocial v-else-if="seccionActiva === 'impacto-social'" />
         <Register v-else-if="authStore.usuarioActual.esStaff && seccionActiva === 'registro'" />
         <AdminCSV v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'csv'" />
+        <AdminImpactoSocial v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'admin-impacto-social'" />
+        <AdminPanel v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'admin-panel'" />
         <Cartelera v-else />
       </template>
     </main>
@@ -148,10 +155,13 @@ import { useCarteleraStore } from './stores/cartelera.js'
 import { useComunidadStore } from './stores/comunidad.js'
 import { useTruequeStore } from './stores/trueque.js'
 import AdminCSV from './views/AdminCSV.vue'
+import AdminImpactoSocial from './views/AdminImpactoSocial.vue'
+import AdminPanel from './views/AdminPanel.vue'
 import Cartelera from './views/Cartelera.vue'
 import Register from './views/Register.vue'
 import Perfil from './views/Perfil.vue'
 import Comunidad from './views/Comunidad.vue'
+import ImpactoSocial from './views/ImpactoSocial.vue'
 import RedComercial from './views/RedComercial.vue'
 import ModalNotificaciones from './components/ModalNotificaciones.vue'
 import ModalPropuesta from './components/ModalPropuesta.vue'

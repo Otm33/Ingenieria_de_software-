@@ -1,3 +1,19 @@
+/**
+ * Modelo de Dominio Frontend — Trueque (Acuerdo de intercambio).
+ *
+ * Capa: models/ (Dominio del frontend)
+ *
+ * Representa un acuerdo de intercambio entre dos usuarios.
+ * Normaliza los datos snake_case del backend a camelCase para Vue.
+ *
+ * Contiene métodos de negocio duplicados del backend para validación local:
+ * - Estados: PENDIENTE → ACEPTADO → EN_CURSO → FINALIZADO (o RECHAZADO)
+ * - Verificar si el usuario puede confirmar la finalización
+ * - Calcular el impacto en horas de vida para cada participante
+ * - Generar etiquetas y clases CSS según el estado
+ *
+ * Flujo: TruequeApiService obtiene JSON → new Trueque(data) → Pinia Store → Vista
+ */
 export default class Trueque {
   constructor({
     id = null,

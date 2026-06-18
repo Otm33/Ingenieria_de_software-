@@ -14,8 +14,7 @@ from ..dto.request_models import (
     ResenaRequest,
     ResponderPropuestaRequest,
 )
-from ..repositories_legado import AcuerdoTruequeRepository
-from ..repositorios_implementacion import PublicacionRepository
+from ..repositorios_implementacion import PublicacionRepository, TruequeRepository
 from ..serializers import MatchEnriquecidoSerializer
 from ..services import MatchmakingService, NotificacionService, ResenaService, TruequeService
 from ..services.base import BusinessError
@@ -27,7 +26,7 @@ def _controlador():
         matchmaking_service=MatchmakingService(),
         publicacion_repository=PublicacionRepository(),
         trueque_service=TruequeService(),
-        trueque_repository=AcuerdoTruequeRepository(),
+        trueque_repository=TruequeRepository(),
         notificacion_service=NotificacionService(),
         resena_service=ResenaService(),
     )
@@ -44,7 +43,9 @@ class MatchmakingRouter(APIView):
                 publicacion_id=request.query_params.get("publicacion_id"),
                 accion=request.query_params.get("accion"),
             )
-            resultado = _controlador().obtener_matches(request.user, req_data)
+            from ..utils.conversor_orm_dominio import usuario_orm_a_dominio
+            usuario_dominio = usuario_orm_a_dominio(request.user)
+            resultado = _controlador().obtener_matches(usuario_dominio, req_data)
             if "matches" in resultado:
                 resultado["matches"] = MatchEnriquecidoSerializer(
                     resultado["matches"], many=True

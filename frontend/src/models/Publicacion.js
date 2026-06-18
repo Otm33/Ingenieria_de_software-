@@ -1,3 +1,22 @@
+/**
+ * Modelo de Dominio Frontend — Publicación (Talento o Necesidad).
+ *
+ * Capa: models/ (Dominio del frontend)
+ *
+ * Representa una publicación de la cartelera. Normaliza los datos
+ * snake_case del backend a camelCase para Vue.
+ *
+ * Tipos: TALENTO (lo que ofrezco) | NECESIDAD (lo que busco)
+ * Urgencias: NORMAL | ALTA | CRITICA
+ *
+ * Métodos de negocio espejo del backend:
+ * - esTalento() / esNecesidad(): clasificación del tipo
+ * - esUrgente() / esCritica(): prioridad de la publicación
+ * - etiquetaTipo(), claseBadgeUrgencia(): helpers para renderizado UI
+ * - coincideConCategoria(), coincideConUrgencia(): filtrado local
+ *
+ * Flujo: PublicacionApiService obtiene JSON → new Publicacion(data) → Store → Vista
+ */
 export default class Publicacion {
   // CAMBIO MODELO: normaliza cada publicacion recibida desde la BD via API Django.
   constructor({

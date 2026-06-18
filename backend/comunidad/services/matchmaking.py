@@ -1,5 +1,5 @@
-from ..interfaces import MatchmakingInterface
-from ..repositories_legado import PublicacionRepository, MatchmakingRepository, NotificacionPropuestaRepository, AcuerdoTruequeRepository
+from ..interfaces.service_interfaces import MatchmakingInterface
+from ..repositorios_implementacion import PublicacionRepository, MatchmakingRepository, NotificacionRepository, TruequeRepository
 from .trueque import TruequeService
 
 
@@ -13,8 +13,8 @@ class MatchmakingService(MatchmakingInterface):
     ):
         self.publicacion_repository = publicacion_repository or PublicacionRepository()
         self.matchmaking_repository = matchmaking_repository or MatchmakingRepository()
-        self.notificacion_repository = notificacion_repository or NotificacionPropuestaRepository()
-        self.trueque_repository = trueque_repository or AcuerdoTruequeRepository()
+        self.notificacion_repository = notificacion_repository or NotificacionRepository()
+        self.trueque_repository = trueque_repository or TruequeRepository()
         self.matches = []
 
     def obtener_matches(self, usuario):
@@ -23,17 +23,17 @@ class MatchmakingService(MatchmakingInterface):
         logger.info(f"Obteniendo matches para usuario {usuario.id} ({usuario.username})")
 
         titulos_necesidades = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
-            usuario, "NECESIDAD"
+            usuario.id, "NECESIDAD"
         )
         titulos_talentos = self.publicacion_repository.titulos_activos_por_usuario_y_tipo(
-            usuario, "TALENTO"
+            usuario.id, "TALENTO"
         )
 
         logger.info(f"Usuario {usuario.id} - Necesidades activas: {titulos_necesidades}")
         logger.info(f"Usuario {usuario.id} - Talentos activos: {titulos_talentos}")
 
         self.matches = self.matchmaking_repository.buscar_matches(
-            usuario, titulos_necesidades, titulos_talentos
+            usuario.id, titulos_necesidades, titulos_talentos
         )
 
         logger.info(f"Matches encontrados para usuario {usuario.id}: {len(self.matches)}")
@@ -42,11 +42,10 @@ class MatchmakingService(MatchmakingInterface):
     def verificar_coincidencia_por_titulo(self, usuario, publicacion_id):
         """Verifica si el usuario tiene publicaciones con el mismo título que la publicación seleccionada."""
         try:
-            from ..models import Publicacion
-            publicacion = Publicacion.objects.get(id=publicacion_id, esta_activa=True)
-            resultado = self.matchmaking_repository.verificar_coincidencia_por_titulo(usuario, publicacion)
+            publicacion = self.publicacion_repository.obtener_por_id_activa(publicacion_id)
+            resultado = self.matchmaking_repository.verificar_coincidencia_por_titulo(usuario.id, publicacion)
             return resultado
-        except Publicacion.DoesNotExist:
+        except Exception:
             return {
                 "tiene_coincidencia": False,
                 "publicaciones_coincidentes": [],
@@ -58,24 +57,20 @@ class MatchmakingService(MatchmakingInterface):
     def obtener_matches_por_publicacion(self, usuario, publicacion_id):
         """Obtiene matches basados en una publicación específica."""
         try:
-            from ..models import Publicacion
-            publicacion = Publicacion.objects.get(id=publicacion_id, esta_activa=True)
-            self.matches = self.matchmaking_repository.buscar_matches_por_publicacion(usuario, publicacion)
+            publicacion = self.publicacion_repository.obtener_por_id_activa(publicacion_id)
+            self.matches = self.matchmaking_repository.buscar_matches_por_publicacion(usuario.id, publicacion)
             return self.matches
-        except Publicacion.DoesNotExist:
+        except Exception:
             return []
 
-    @staticmethod
-    def _construir_match_detalle(match, usuario):
+    def _construir_match_detalle(self, match, usuario):
         """Arma las dos parejas del match desde la perspectiva del destinatario."""
-        from ..models import Publicacion
-
         detalle = []
         vistos = set()
 
         for sugerencia in match.get("publicaciones_sugeridas", []):
-            mi_pub = Publicacion.objects.filter(id=sugerencia.get("mi_pub_id")).first()
-            su_pub = Publicacion.objects.filter(id=sugerencia.get("su_pub_id")).first()
+            mi_pub = self.publicacion_repository.obtener_por_id(sugerencia.get("mi_pub_id"))
+            su_pub = self.publicacion_repository.obtener_por_id(sugerencia.get("su_pub_id"))
             if not mi_pub or not su_pub or mi_pub.usuario_id != usuario.id:
                 continue
             if mi_pub.tipo == "NECESIDAD" and su_pub.tipo == "TALENTO":
@@ -101,12 +96,8 @@ class MatchmakingService(MatchmakingInterface):
         if len(detalle) < 2:
             otro_usuario = match["usuario"]
             for tal_otro in match.get("talentos_coincidentes", []):
-                mi_nec = Publicacion.objects.filter(
-                    usuario=usuario,
-                    tipo="NECESIDAD",
-                    titulo=tal_otro.titulo,
-                    esta_activa=True,
-                ).first()
+                mi_nec = self.publicacion_repository.listar_por_usuario_y_tipo_activas(usuario.id, "NECESIDAD")
+                mi_nec = next((p for p in mi_nec if p.titulo == tal_otro.titulo), None)
                 if not mi_nec:
                     continue
                 clave = ("recibo", mi_nec.titulo)
@@ -124,12 +115,8 @@ class MatchmakingService(MatchmakingInterface):
                 )
 
             for nec_otro in match.get("necesidades_coincidentes", []):
-                mi_tal = Publicacion.objects.filter(
-                    usuario=usuario,
-                    tipo="TALENTO",
-                    titulo=nec_otro.titulo,
-                    esta_activa=True,
-                ).first()
+                mi_tal = self.publicacion_repository.listar_por_usuario_y_tipo_activas(usuario.id, "TALENTO")
+                mi_tal = next((p for p in mi_tal if p.titulo == nec_otro.titulo), None)
                 if not mi_tal:
                     continue
                 clave = ("doy", mi_tal.titulo)
@@ -146,6 +133,7 @@ class MatchmakingService(MatchmakingInterface):
                     }
                 )
 
+        print(f"DEBUG: _construir_match_detalle output: {detalle}")
         orden = {"recibo": 0, "doy": 1}
         detalle.sort(key=lambda entrada: orden.get(entrada["rol"], 2))
         return detalle
@@ -180,21 +168,14 @@ class MatchmakingService(MatchmakingInterface):
             f"y necesita {necesidad_titulo}. Coincide con tu perfil."
         )
 
-    @staticmethod
-    def _resolver_publicaciones_match_completo(match, usuario):
+    def _resolver_publicaciones_match_completo(self, match, usuario):
         """Match complementario: talento propio + talento del vecino (0 horas netas)."""
-        from ..models import Publicacion
-
         if not match.get("talentos_coincidentes") or not match.get("necesidades_coincidentes"):
             return None, None
 
         titulos_que_yo_ofrezco = [nec.titulo for nec in match["necesidades_coincidentes"]]
-        pub_usuario = Publicacion.objects.filter(
-            usuario=usuario,
-            tipo="TALENTO",
-            esta_activa=True,
-            titulo__in=titulos_que_yo_ofrezco,
-        ).first()
+        talentos_usuario = self.publicacion_repository.listar_por_usuario_y_tipo_activas(usuario.id, "TALENTO")
+        pub_usuario = next((p for p in talentos_usuario if p.titulo in titulos_que_yo_ofrezco), None)
         pub_otro = match["talentos_coincidentes"][0]
 
         if pub_usuario and pub_otro:
@@ -215,7 +196,7 @@ class MatchmakingService(MatchmakingInterface):
             otro_usuario = match["usuario"]
             logger.info(f"Procesando match con usuario {otro_usuario.id} ({otro_usuario.username})")
             
-            if self.notificacion_repository.existe_match_entre(usuario, otro_usuario):
+            if self.notificacion_repository.existe_match_entre(usuario.id, otro_usuario.id):
                 logger.info(f"Ya existe un match entre {usuario.id} y {otro_usuario.id}, se omite")
                 continue
 
@@ -224,16 +205,14 @@ class MatchmakingService(MatchmakingInterface):
             if not pub_emisor:
                 sugerencia = match["publicaciones_sugeridas"][0] if match["publicaciones_sugeridas"] else {}
                 if sugerencia:
-                    from ..models import Publicacion
-
-                    pub_emisor = Publicacion.objects.filter(id=sugerencia.get("mi_pub_id")).first()
-                    pub_receptor = Publicacion.objects.filter(id=sugerencia.get("su_pub_id")).first()
+                    pub_emisor = self.publicacion_repository.obtener_por_id(sugerencia.get("mi_pub_id"))
+                    pub_receptor = self.publicacion_repository.obtener_por_id(sugerencia.get("su_pub_id"))
 
             trueque = self.trueque_repository.obtener_o_crear_pendiente(
-                emisor=usuario,
-                receptor=otro_usuario,
-                publicacion_emisor=pub_emisor,
-                publicacion_receptor=pub_receptor,
+                emisor_id=usuario.id,
+                receptor_id=otro_usuario.id,
+                publicacion_emisor_id=getattr(pub_emisor, 'id', None),
+                publicacion_receptor_id=getattr(pub_receptor, 'id', None),
             )
 
             es_mutuo = TruequeService._es_intercambio_mutuo(trueque)
@@ -252,10 +231,10 @@ class MatchmakingService(MatchmakingInterface):
             logger.info(f"Creando notificación MATCH para {usuario.id}: {mensaje_para_usuario}")
             notificaciones_creadas.append(
                 self.notificacion_repository.crear_notificacion(
-                    destinatario=usuario,
-                    remitente=otro_usuario,
-                    trueque=trueque,
-                    publicacion_original=publicacion_referencia,
+                    destinatario_id=usuario.id,
+                    remitente_id=otro_usuario.id,
+                    trueque_id=trueque.id,
+                    publicacion_original_id=publicacion_referencia.id,
                     mensaje=mensaje_para_usuario,
                     tipo="MATCH",
                     match_detalle=match_detalle_usuario or None,
@@ -272,10 +251,10 @@ class MatchmakingService(MatchmakingInterface):
             logger.info(f"Creando notificación MATCH para {otro_usuario.id}: {mensaje_para_match}")
             notificaciones_creadas.append(
                 self.notificacion_repository.crear_notificacion(
-                    destinatario=otro_usuario,
-                    remitente=usuario,
-                    trueque=trueque,
-                    publicacion_original=publicacion_referencia,
+                    destinatario_id=otro_usuario.id,
+                    remitente_id=usuario.id,
+                    trueque_id=trueque.id,
+                    publicacion_original_id=publicacion_referencia.id,
                     mensaje=mensaje_para_match,
                     tipo="MATCH",
                     match_detalle=match_detalle_otro or None,

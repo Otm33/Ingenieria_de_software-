@@ -15,7 +15,7 @@ class FinalizarTruequeController:
 
     def confirmar_finalizacion(self, usuario_orm, trueque_id: int) -> dict:
         resultado = self._trueque_service.finalizar_trueque(usuario_orm, trueque_id)
-        trueque = self._trueque_repo.obtener_por_participante(trueque_id, usuario_orm)
+        trueque = self._trueque_repo.obtener_por_participante(trueque_id, usuario_orm.id)
 
         return {
             "mensaje": resultado.get("mensaje", ""),
@@ -40,7 +40,7 @@ class FinalizarTruequeController:
             usuario_orm, trueque_id, request.codigo
         )
 
-        trueque = self._trueque_repo.obtener_por_participante(trueque_id, usuario_orm)
+        trueque = self._trueque_repo.obtener_por_participante(trueque_id, usuario_orm.id)
 
         return {
             "mensaje": resultado.get("mensaje", ""),

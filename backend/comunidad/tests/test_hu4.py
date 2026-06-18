@@ -5,10 +5,10 @@ from django.db.models import Q
 from django.test import TestCase, override_settings
 
 from ..models import AcuerdoTrueque, NotificacionPropuesta, Publicacion, Resena, Usuario
-from ..repositories_legado import MatchmakingRepository
+from ..repositorios_implementacion import MatchmakingRepository, NotificacionRepository
 from ..serializers import NotificacionSerializer
 from ..services import BusinessError, MatchmakingService, ResenaService, TruequeService
-from ..helpers import (
+from .helpers import (
     CATEGORIA_MANTENIMIENTO,
     TITULO_FONTANERIA_GENERAL,
     TITULO_INSTALACION_ELECTRICA,
@@ -170,9 +170,7 @@ class ServiciosHU4Tests(HU4TestCase):
         ).first()
         self.assertIsNotNone(notif)
 
-        from ..repositories_legado import NotificacionPropuestaRepository
-
-        NotificacionPropuestaRepository().marcar_como_leida(notif.id, destinatario=user_a)
+        NotificacionRepository().marcar_como_leida(notif.id, usuario_id=user_a.id)
 
         count_antes = NotificacionPropuesta.objects.filter(tipo="MATCH").count()
         self.matchmaking_service.detectar_y_notificar_matches(user_a)
@@ -270,10 +268,10 @@ class ServiciosHU4Tests(HU4TestCase):
         )
         self.assertEqual(pendientes_despues.count(), 1)
         self.assertEqual(trueque_propuesta.id, trueque_match_id)
-        self.assertEqual(trueque_propuesta.emisor, user_a)
-        self.assertEqual(trueque_propuesta.receptor, user_b)
-        self.assertEqual(trueque_propuesta.publicacion_emisor, pub_emisor)
-        self.assertEqual(trueque_propuesta.publicacion_receptor, pub_receptor)
+        self.assertEqual(trueque_propuesta.emisor_id, user_a.id)
+        self.assertEqual(trueque_propuesta.receptor_id, user_b.id)
+        self.assertEqual(trueque_propuesta.publicacion_emisor_id, pub_emisor.id)
+        self.assertEqual(trueque_propuesta.publicacion_receptor_id, pub_receptor.id)
 
     def test_crear_propuesta_crea_notificacion_propuesta(self):
         emisor = crear_usuario("prop_emisor", "pe@test.com", "Prop Emisor")
@@ -292,7 +290,7 @@ class ServiciosHU4Tests(HU4TestCase):
             pub_receptor.id,
         )
 
-        notificacion = NotificacionPropuesta.objects.get(trueque=trueque)
+        notificacion = NotificacionPropuesta.objects.get(trueque_id=trueque.id)
         self.assertEqual(notificacion.tipo, "PROPUESTA")
         self.assertEqual(notificacion.destinatario, receptor)
         self.assertEqual(notificacion.publicacion_original, pub_receptor)
@@ -336,7 +334,7 @@ class ServiciosHU4Tests(HU4TestCase):
             pub_receptor.id,
         )
 
-        notificacion = NotificacionPropuesta.objects.get(trueque=trueque)
+        notificacion = NotificacionPropuesta.objects.get(trueque_id=trueque.id)
         self.assertEqual(notificacion.tipo, "PROPUESTA")
         self.assertEqual(notificacion.destinatario, receptor)
 
@@ -357,9 +355,9 @@ class ServiciosHU4Tests(HU4TestCase):
             pub_receptor.id,
         )
 
-        self.assertEqual(trueque.publicacion_emisor, pub_emisor)
-        self.assertEqual(trueque.publicacion_receptor, pub_receptor)
-        self.assertTrue(NotificacionPropuesta.objects.filter(trueque=trueque, tipo="PROPUESTA").exists())
+        self.assertEqual(trueque.publicacion_emisor_id, pub_emisor.id)
+        self.assertEqual(trueque.publicacion_receptor_id, pub_receptor.id)
+        self.assertTrue(NotificacionPropuesta.objects.filter(trueque_id=trueque.id, tipo="PROPUESTA").exists())
 
     def test_crear_propuesta_talento_talento_ok_para_match(self):
         user_a, user_b = self._crear_par_complementario()
@@ -377,9 +375,13 @@ class ServiciosHU4Tests(HU4TestCase):
             pub_talento_b.id,
         )
 
-        self.assertEqual(trueque.publicacion_emisor.tipo, "TALENTO")
-        self.assertEqual(trueque.publicacion_receptor.tipo, "TALENTO")
-        self.assertTrue(self.trueque_service._es_intercambio_mutuo(trueque))
+        # Verificar tipos usando ORM (dominio no tiene relaciones anidadas)
+        trueque_orm = AcuerdoTrueque.objects.select_related(
+            'publicacion_emisor', 'publicacion_receptor'
+        ).get(id=trueque.id)
+        self.assertEqual(trueque_orm.publicacion_emisor.tipo, "TALENTO")
+        self.assertEqual(trueque_orm.publicacion_receptor.tipo, "TALENTO")
+        self.assertTrue(self.trueque_service._es_intercambio_mutuo(trueque_orm))
 
     def test_mensaje_propuesta_talento_necesidad(self):
         emisor = crear_usuario("msg_tn_emisor", "mte@test.com", "Mensaje TN Emisor")
@@ -397,7 +399,7 @@ class ServiciosHU4Tests(HU4TestCase):
             pub_emisor.id,
             pub_receptor.id,
         )
-        notificacion = NotificacionPropuesta.objects.get(trueque=trueque)
+        notificacion = NotificacionPropuesta.objects.get(trueque_id=trueque.id)
 
         self.assertIn("ofrece", notificacion.mensaje)
         self.assertIn(TITULO_INSTALACION_ELECTRICA, notificacion.mensaje)
@@ -420,7 +422,7 @@ class ServiciosHU4Tests(HU4TestCase):
             pub_emisor.id,
             pub_receptor.id,
         )
-        notificacion = NotificacionPropuesta.objects.get(trueque=trueque)
+        notificacion = NotificacionPropuesta.objects.get(trueque_id=trueque.id)
 
         self.assertIn("solicita", notificacion.mensaje)
         self.assertIn("talento", notificacion.mensaje.lower())
@@ -441,8 +443,8 @@ class ServiciosHU4Tests(HU4TestCase):
         )
 
         self.trueque_service.responder_propuesta(receptor, trueque.id, "ACEPTAR")
-        trueque.refresh_from_db()
-        self.assertEqual(trueque.estado, "EN_CURSO")
+        trueque_actualizado = AcuerdoTrueque.objects.get(id=trueque.id)
+        self.assertEqual(trueque_actualizado.estado, "EN_CURSO")
 
     def test_finalizar_una_confirmacion_no_mueve_saldo(self):
         prestador = crear_usuario("prestador", "prest@test.com", "Prestador", horas=0.0)

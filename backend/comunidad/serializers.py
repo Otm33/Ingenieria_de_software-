@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AcuerdoTrueque, AcuerdoTruequeMultiple, NotificacionPropuesta, Publicacion, Resena, ResenaMultiple, SaldoComercial, Usuario
+from .models import AcuerdoTrueque, AcuerdoTruequeMultiple, NotificacionPropuesta, Publicacion, Resena, ResenaMultiple, SaldoComercial, Usuario, SolicitudApoyoSocial, DonacionHoras
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -168,10 +168,26 @@ class AcuerdoTruequeSerializer(serializers.ModelSerializer):
         return not Resena.objects.filter(trueque=obj, calificador=request.user).exists()
 
 
+class PublicacionDominioSerializer(serializers.Serializer):
+    """Serializa entidades PublicacionDominio (no ORM).
+    Usa los campos desnormalizados poblados por el repositorio.
+    """
+    id = serializers.IntegerField()
+    usuario = serializers.IntegerField(source='usuario_id')
+    usuario_nombre_real = serializers.CharField()
+    usuario_estrellas = serializers.FloatField(source='usuario_promedio_estrellas')
+    tipo = serializers.CharField()
+    titulo = serializers.CharField()
+    descripcion = serializers.CharField()
+    categoria = serializers.CharField()
+    urgencia = serializers.CharField()
+    esta_activa = serializers.BooleanField()
+
+
 class MatchEnriquecidoSerializer(serializers.Serializer):
     usuario = UsuarioSerializer()
-    talentos_coincidentes = PublicacionSerializer(many=True)
-    necesidades_coincidentes = PublicacionSerializer(many=True)
+    talentos_coincidentes = PublicacionDominioSerializer(many=True)
+    necesidades_coincidentes = PublicacionDominioSerializer(many=True)
     publicaciones_sugeridas = serializers.ListField(child=serializers.DictField(), allow_empty=True)
 
 
@@ -346,4 +362,80 @@ class ResenaMultipleSerializer(serializers.ModelSerializer):
             'calificado_nombre',
             'estrellas',
             'comentario',
+        ]
+
+
+# ── Sprint 2 HU1: Impacto Social ─────────────────────────────────────────────
+
+class SolicitudApoyoSocialSerializer(serializers.ModelSerializer):
+    solicitante_nombre = serializers.CharField(source="solicitante.nombre_real", read_only=True)
+    estado_social_solicitante = serializers.CharField(source="solicitante.estado_social", read_only=True)
+    necesidad_activa = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SolicitudApoyoSocial
+        fields = [
+            "id",
+            "solicitante",
+            "solicitante_nombre",
+            "categoria",
+            "titulo",
+            "descripcion",
+            "estado",
+            "horas_recibidas",
+            "horas_solidarias_disponibles",
+            "horas_solidarias_utilizadas",
+            "publicacion_id",
+            "necesidad_activa",
+            "estado_social_solicitante",
+            "creado_el",
+            "actualizado_el",
+        ]
+        read_only_fields = [
+            "id", "solicitante", "estado", "horas_recibidas",
+            "horas_solidarias_disponibles", "horas_solidarias_utilizadas",
+            "publicacion_id", "necesidad_activa", "creado_el", "actualizado_el",
+        ]
+
+    def get_necesidad_activa(self, obj):
+        if obj.publicacion_id is None:
+            return False
+        publicacion = getattr(obj, "publicacion", None)
+        if publicacion is None:
+            return False
+        return publicacion.esta_activa
+
+
+class DonacionHorasSerializer(serializers.ModelSerializer):
+    donante_nombre = serializers.CharField(source="donante.nombre_real", read_only=True)
+    receptor_nombre = serializers.CharField(source="receptor.nombre_real", read_only=True)
+
+    class Meta:
+        model = DonacionHoras
+        fields = [
+            "id",
+            "donante",
+            "donante_nombre",
+            "receptor",
+            "receptor_nombre",
+            "solicitud",
+            "monto",
+            "tipo_destino",
+            "fecha",
+            "comprobante_id",
+        ]
+
+
+class UsuarioEstadoSocialSerializer(serializers.ModelSerializer):
+    """Serializer simplificado para la vista de admin de impacto social."""
+
+    class Meta:
+        model = Usuario
+        fields = [
+            "id",
+            "username",
+            "nombre_real",
+            "horas_de_vida",
+            "estado_social",
+            "horas_recibidas_donacion",
         ]

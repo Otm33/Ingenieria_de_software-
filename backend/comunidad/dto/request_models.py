@@ -1,3 +1,24 @@
+"""
+Capa de Presentación — Data Transfer Objects (DTOs) del backend.
+
+Arquitectura N-Tier:
+    Los DTOs son dataclasses que traducen el JSON del request HTTP a un objeto
+    tipado de Python. Son el "contrato de entrada" que el Router/View recibe
+    del frontend y pasa al Controlador.
+
+Responsabilidad:
+    - Definir la estructura exacta de cada payload HTTP (campos y tipos).
+    - NO contienen lógica de negocio ni validación compleja.
+    - La validación semántica se realiza en la capa de Servicios y Negocio.
+    - Cada DTO mapea 1:1 con un endpoint específico de la API REST.
+
+Flujo:
+    Vue (frontend) → JSON → Django View (deserializa a DTO) → Controlador → Servicio
+
+Equivalente en frontend:
+    Estas clases tienen su espejo en ``frontend/src/models/RequestModels.js``,
+    donde también se definen como clases con validación local antes del envío.
+"""
 from dataclasses import dataclass
 from typing import Optional
 

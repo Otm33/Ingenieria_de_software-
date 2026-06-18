@@ -23,8 +23,8 @@ class CarteleraRouter(APIView):
             urgencias = request.query_params.getlist("urgencia") or None
 
             controlador = CarteleraController(publicacion_repository=PublicacionRepository())
-            resultado = controlador.obtener_cartelera(categoria=categoria, urgencias=urgencias)
-            return Response(resultado, status=status.HTTP_200_OK)
+            publicaciones = controlador.obtener_cartelera(categoria=categoria, urgencias=urgencias)
+            return Response(publicaciones, status=status.HTTP_200_OK)
         except Exception as e:
             return Response(
                 {"error": f"Error interno: {str(e)}"},

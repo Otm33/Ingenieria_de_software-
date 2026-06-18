@@ -1,5 +1,18 @@
 import ApiClient from './ApiClient.js'
 
+/**
+ * ComercioRepository — Servicio API para operaciones de Red Comercial (HU5).
+ *
+ * Capa: services/api/ (Presentación del frontend)
+ *
+ * Encapsula las llamadas HTTP al backend para:
+ * - Listar comercios activos y clientes de la plataforma
+ * - Consultar saldo comercial del usuario actual
+ * - Emitir vuelto digital (comercio → cliente)
+ * - Pagar con saldo comercial (cliente → comercio)
+ *
+ * Flujo: useComercioStore (Pinia) → ComercioRepository → ApiClient → Backend
+ */
 export default class ComercioRepository {
   constructor(baseURL = '/api/') {
     this.apiClient = new ApiClient(baseURL)

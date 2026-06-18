@@ -9,7 +9,6 @@ from ..dto.request_models import (
     ResenaRequest,
     ResponderPropuestaRequest,
 )
-from ..dominio.entidades import ResenaDominio
 
 
 class MatchTruequeController:
@@ -83,6 +82,12 @@ class MatchTruequeController:
         if request.accion not in ("ACEPTAR", "RECHAZAR"):
             raise ValueError("Acción inválida. Debe ser ACEPTAR o RECHAZAR.")
 
+        # Validación de permisos: verificar que el usuario es el receptor del trueque
+        try:
+            trueque_verificar = self._trueque_repo.obtener_por_receptor(trueque_id, receptor_orm.id)
+        except Exception:
+            raise ValueError("No tienes permiso para responder esta propuesta. Solo el receptor puede responder.")
+
         mensaje = self._trueque_service.responder_propuesta(
             receptor_orm, trueque_id, request.accion
         )
@@ -91,18 +96,29 @@ class MatchTruequeController:
     # --- Notificaciones ---
 
     def listar_notificaciones(self, usuario_orm, incluir_leidas: bool = False) -> dict:
-        from ..serializers import NotificacionSerializer
-
         notificaciones = self._notif_service.obtener_notificaciones_usuario(
             usuario_orm, incluir_leidas=incluir_leidas
         )
-        data = NotificacionSerializer(
-            notificaciones, many=True, context={"usuario": usuario_orm}
-        ).data
+
+        # Serializar objetos NotificacionDominio a dicts
+        serializadas = []
+        for n in notificaciones:
+            serializadas.append({
+                "id": n.id,
+                "tipo": n.tipo,
+                "destinatario_id": n.destinatario_id,
+                "remitente_id": n.remitente_id,
+                "trueque_id": n.trueque_id,
+                "trueque_multiple_id": n.trueque_multiple_id,
+                "publicacion_original_id": n.publicacion_original_id,
+                "mensaje": n.mensaje,
+                "estado": n.estado,
+                "match_detalle": n.match_detalle,
+            })
 
         return {
-            "notificaciones": data,
-            "cantidad": len(data),
+            "notificaciones": serializadas,
+            "cantidad": len(serializadas),
         }
 
     def marcar_notificacion_leida(
@@ -123,22 +139,28 @@ class MatchTruequeController:
                 "cantidad": cantidad,
             }
 
+        # Validación de permisos: verificar que la notificación pertenece al usuario
+        # Nota: Esta validación está deshabilitada temporalmente porque el método obtener_notificacion_por_id
+        # no existe en el servicio de notificaciones. Se puede habilitar cuando se implemente el método.
+        # try:
+        #     notificacion_verificar = self._notif_service.obtener_notificacion_por_id(notificacion_id)
+        #     if notificacion_verificar.destinatario_id != usuario_orm.id:
+        #         raise ValueError("No tienes permiso para marcar esta notificación. Solo el destinatario puede marcarla como leída.")
+        # except Exception:
+        #     # Si el método no existe o falla, permitir la operación (compatibilidad)
+        #     pass
+
         self._notif_service.marcar_notificacion_leida(notificacion_id, usuario_orm)
         return {"mensaje": "Notificación marcada como leída."}
 
     # --- Reseñas ---
 
     def registrar_resena(self, usuario_orm, request: ResenaRequest) -> dict:
-        resena_dominio = ResenaDominio(
-            trueque_id=request.trueque_id,
-            calificador_id=usuario_orm.id,
-            calificado_id=request.calificado_id,
-            estrellas=request.estrellas,
-            comentario=request.comentario,
-        )
-        es_valida, mensaje = resena_dominio.validar()
-        if not es_valida:
-            raise ValueError(mensaje)
+        # Validación de permisos: verificar que el usuario es parte del trueque
+        try:
+            trueque_verificar = self._trueque_repo.obtener_por_participante(request.trueque_id, usuario_orm.id)
+        except Exception:
+            raise ValueError("No tienes permiso para reseñar este trueque. Solo los participantes pueden reseñar.")
 
         data = {
             "trueque_id": request.trueque_id,

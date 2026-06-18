@@ -1,6 +1,7 @@
+from django.db import transaction
 from .base import BusinessError
-from ..interfaces import RegistroUsuariosInterface
-from ..repositories_legado import UsuarioAutorizadoRepository, UsuarioRepository
+from ..interfaces.service_interfaces import RegistroUsuariosInterface
+from ..repositorios_implementacion import UsuarioAutorizadoRepository, UsuarioRepository
 
 
 class RegistroUsuarioService(RegistroUsuariosInterface):
@@ -22,6 +23,7 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
 
         return True
 
+    @transaction.atomic
     def registrar_usuario(self, datos):
         email = datos.get("email")
         username = datos.get("username")

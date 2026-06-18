@@ -1,5 +1,4 @@
 import ApiClient from './ApiClient.js'
-import User from '../../models/User.js'
 
 /**
  * AuthRepository - Repositorio para operaciones de autenticación
@@ -26,7 +25,7 @@ export default class AuthRepository {
    * Registra un nuevo usuario
    */
   async registrarUsuario(formulario) {
-    return this.apiClient.post('registro/', User.paraRegistro(formulario))
+    return this.apiClient.post('registro/', formulario)
   }
 
   /**
@@ -43,7 +42,7 @@ export default class AuthRepository {
       }
     )
     
-    return data.autenticado ? new User(data.usuario) : null
+    return data.autenticado ? data.usuario : null
   }
 
   /**
@@ -54,8 +53,8 @@ export default class AuthRepository {
     
     // Invalidar caché de sesión después de login
     this.apiClient.invalidate(this.sessionCacheKey)
-    
-    return new User(data.usuario)
+
+    return data.usuario
   }
 
   /**

@@ -1,8 +1,8 @@
 import csv
 
 from .base import BusinessError
-from ..interfaces import CargaUsuariosInterface
-from ..repositories_legado import UsuarioAutorizadoRepository
+from ..interfaces.service_interfaces import CargaUsuariosInterface
+from ..repositorios_implementacion import UsuarioAutorizadoRepository
 
 
 class CargaUsuariosService(CargaUsuariosInterface):
