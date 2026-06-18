@@ -105,6 +105,12 @@ from .routers.hu_s2_hu3_admin_panel_router import (
     AdminPanelSaldosRouter,
 )
 
+# Tactica "Autorizar Actores" — Metricas de seguridad
+from .routers.seguridad_metricas_router import (
+    MetricasAutorizacionRouter,
+    HistorialAutorizacionRouter,
+    LimpiarAuditoriaRouter,
+)
 
 urlpatterns = [
     # Sprint 1 HU 1 — Comunidad
@@ -193,5 +199,10 @@ urlpatterns = [
     path("admin/panel/resenas-multiples/", AdminPanelResenasMultiplesRouter.as_view(), name="admin_panel_resenas_multiples"),
     path("admin/panel/resenas-multiples/<int:resena_id>/", AdminPanelEliminarResenaMultipleRouter.as_view(), name="admin_panel_eliminar_resena_multiple"),
     path("admin/panel/saldos/", AdminPanelSaldosRouter.as_view(), name="admin_panel_saldos"),
-]
 
+    # Tactica "Autorizar Actores" (Bass, Clements & Kazman, 2023)
+    # Endpoints para medir la metrica de efectividad de autorizacion
+    path("seguridad/metricas-autorizacion/", MetricasAutorizacionRouter.as_view(), name="metricas_autorizacion"),
+    path("seguridad/historial-autorizacion/", HistorialAutorizacionRouter.as_view(), name="historial_autorizacion"),
+    path("seguridad/limpiar-auditoria/", LimpiarAuditoriaRouter.as_view(), name="limpiar_auditoria"),
+]

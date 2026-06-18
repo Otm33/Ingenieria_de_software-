@@ -1,3 +1,5 @@
+import time
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 
@@ -5,8 +7,14 @@ from .base import BusinessError, generar_codigo_confirmacion
 from ..interfaces.service_interfaces import TruequeInterface
 from ..repositorios_implementacion import TruequeRepository, UsuarioRepository, PublicacionRepository
 from .notificacion import NotificacionService
-from ..negocio.trueque import es_intercambio_mutuo, esta_en_curso, puede_confirmar, ambas_partes_confirmaron, es_participante, contraparte
+from ..negocio.trueque import (
+    es_intercambio_mutuo, esta_en_curso, puede_confirmar,
+    ambas_partes_confirmaron, es_participante, contraparte,
+    autorizar_actor_finalizacion, autorizar_actor_codigo,
+)
 from ..negocio.publicacion import es_talento, es_necesidad
+# Audit log para medir la metrica de autorizacion
+from ..negocio.audit_log import registrar_intento_autorizacion, AUTORIZADO, BLOQUEADO
 
 
 class TruequeService(TruequeInterface):
@@ -182,7 +190,7 @@ class TruequeService(TruequeInterface):
         raise BusinessError("Accion invalida.")
 
     def finalizar_trueque(self, usuario, trueque_id):
-        """Confirmación bilateral antes de transferir el saldo de horas."""
+        """Confirmacion bilateral antes de transferir el saldo de horas."""
         with transaction.atomic():
             try:
                 trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
@@ -192,20 +200,33 @@ class TruequeService(TruequeInterface):
             if not trueque:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
-            # Usar función de negocio de AcuerdoTrueque para verificar participación
-            if not es_participante(trueque, usuario):
-                raise BusinessError("No eres parte de este trueque.", status_code=403)
+            # Autorizar Actores: verificar permisos y medir tiempo de deteccion
+            t_inicio = time.perf_counter()
+            autorizado, motivo = autorizar_actor_finalizacion(trueque, usuario)
+            t_deteccion = (time.perf_counter() - t_inicio) * 1000
 
-            # Aceptar tanto trueques en estado ACEPTADO como EN_CURSO
-            if getattr(trueque, 'estado', None) not in ("ACEPTADO", "EN_CURSO"):
-                raise BusinessError("El trueque debe estar aceptado para confirmar finalización.", status_code=400)
+            uid = getattr(usuario, 'id', usuario)
 
-            # Usar función de negocio de AcuerdoTrueque para verificar si puede confirmar
+            # Registrar intento en el audit log
+            registrar_intento_autorizacion(
+                usuario_id=uid,
+                trueque_id=trueque_id,
+                accion='FINALIZAR_TRUEQUE',
+                resultado=AUTORIZADO if autorizado else BLOQUEADO,
+                motivo=motivo,
+                tiempo_deteccion_ms=t_deteccion,
+                emisor_id=trueque.emisor_id,
+                receptor_id=trueque.receptor_id,
+            )
+
+            if not autorizado:
+                raise BusinessError(motivo, status_code=403)
+
+            # Usar funcion de negocio para verificar si puede confirmar
             puede_conf, mensaje = puede_confirmar(trueque, usuario)
             if not puede_conf:
                 raise BusinessError(mensaje)
 
-            uid = getattr(usuario, 'id', usuario)
             if uid == trueque.emisor_id:
                 trueque.emisor_confirmado = True
             else:
@@ -275,7 +296,7 @@ class TruequeService(TruequeInterface):
             }
 
     def validar_codigo_finalizacion(self, usuario, trueque_id, codigo):
-        """Valida el código de confirmación y finaliza el trueque si es correcto."""
+        """Valida el codigo de confirmacion y finaliza el trueque."""
         with transaction.atomic():
             try:
                 trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
@@ -285,22 +306,30 @@ class TruequeService(TruequeInterface):
             if not trueque:
                 raise BusinessError("Trueque no encontrado.", status_code=404)
 
-            # Verificar que el usuario es parte del trueque
-            if not es_participante(trueque, usuario):
-                raise BusinessError("No eres parte de este trueque.", status_code=403)
+            # Autorizar Actores: solo el receptor puede ingresar el codigo
+            t_inicio = time.perf_counter()
+            autorizado, motivo = autorizar_actor_codigo(trueque, usuario)
+            t_deteccion = (time.perf_counter() - t_inicio) * 1000
 
-            # Verificar que el trueque está en curso
-            if not esta_en_curso(trueque):
-                raise BusinessError("El trueque debe estar en curso para finalizar.", status_code=400)
-
-            # Verificar que el código sea correcto
-            if trueque.codigo_confirmacion != codigo:
-                raise BusinessError("Código de confirmación incorrecto.", status_code=400)
-
-            # Verificar que solo el receptor pueda introducir el código
             uid = getattr(usuario, 'id', usuario)
-            if uid == trueque.emisor_id:
-                raise BusinessError("Solo el receptor puede introducir el código del emisor.", status_code=403)
+
+            registrar_intento_autorizacion(
+                usuario_id=uid,
+                trueque_id=trueque_id,
+                accion='VALIDAR_CODIGO',
+                resultado=AUTORIZADO if autorizado else BLOQUEADO,
+                motivo=motivo,
+                tiempo_deteccion_ms=t_deteccion,
+                emisor_id=trueque.emisor_id,
+                receptor_id=trueque.receptor_id,
+            )
+
+            if not autorizado:
+                raise BusinessError(motivo, status_code=403)
+
+            # Verificar que el codigo sea correcto
+            if trueque.codigo_confirmacion != codigo:
+                raise BusinessError("Codigo de confirmacion incorrecto.", status_code=400)
 
             # Marcar ambas partes como confirmadas ya que el código valida el trueque
             trueque.emisor_confirmado = True
