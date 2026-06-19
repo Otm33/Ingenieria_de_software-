@@ -175,7 +175,7 @@ class TruequeService(TruequeInterface):
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
-            trueque.estado = "EN_CURSO"
+            trueque.estado = "ACEPTADO"
             trueque.codigo_confirmacion = generar_codigo_confirmacion(self.trueque_repository)
             self.trueque_repository.guardar(trueque)
             self.notificacion_service.actualizar_estado_propuesta(trueque, "ACEPTADA")

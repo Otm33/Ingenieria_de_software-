@@ -503,7 +503,7 @@
                   <p v-if="mensajeEspera(trueque)" class="trueque-espera">
                     {{ mensajeEspera(trueque) }}
                   </p>
-                  <div v-if="trueque.estado === 'EN_CURSO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
+                  <div v-if="trueque.estado === 'ACEPTADO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
                     <div v-if="Number(trueque.emisor) === Number(datosPerfil?.usuario?.id)" class="codigo-emisor">
                       <span class="codigo-label">Código de confirmación:</span>
                       <span class="codigo-valor">{{ trueque.codigo_confirmacion }}</span>

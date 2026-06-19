@@ -72,12 +72,43 @@ class LoginRouter(APIView):
             controlador = _controlador()
             controlador.validar_credenciales(req_data)
 
+            from ..models import Usuario as UsuarioORM, UsuarioAutorizado
+
+            # Buscar el usuario registrado por username o email
+            usuario_orm = None
+            try:
+                usuario_orm = UsuarioORM.objects.get(username=req_data.username)
+            except UsuarioORM.DoesNotExist:
+                # Intentar buscar por email
+                try:
+                    usuario_orm = UsuarioORM.objects.get(email=req_data.username)
+                except UsuarioORM.DoesNotExist:
+                    usuario_orm = None
+
+            if usuario_orm is None:
+                # El usuario no está registrado. ¿Está autorizado?
+                es_autorizado = UsuarioAutorizado.objects.filter(
+                    email=req_data.username
+                ).exists()
+
+                if not es_autorizado:
+                    return Response(
+                        {"error": "Usuario no autorizado."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                else:
+                    return Response(
+                        {"error": "No registrado."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+
+            # El usuario existe, intentar autenticar con la contraseña
             usuario = authenticate(
-                request, username=req_data.username, password=req_data.password
+                request, username=usuario_orm.username, password=req_data.password
             )
             if usuario is None:
                 return Response(
-                    {"error": "Credenciales inválidas."},
+                    {"error": "Contraseña incorrecta."},
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
 

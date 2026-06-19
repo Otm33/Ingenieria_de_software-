@@ -559,6 +559,7 @@ class TruequeRepository(ITruequeRepository):
         modelo.estado = trueque_dominio.estado
         modelo.emisor_confirmado = trueque_dominio.emisor_confirmado
         modelo.receptor_confirmado = trueque_dominio.receptor_confirmado
+        modelo.codigo_confirmacion = trueque_dominio.codigo_confirmacion
         modelo.save()
         return trueque_dominio
 

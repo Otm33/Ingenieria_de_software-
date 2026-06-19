@@ -40,7 +40,7 @@ python manage.py migrate
 
 REM Crear superusuario si no existe
 echo Verificando superusuario...
-python -c "from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@example.com', 'admin')"
+python -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE','backend.config.settings'); django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@example.com', 'admin')"
 
 cls
 echo ==========================================

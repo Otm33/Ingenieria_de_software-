@@ -175,10 +175,12 @@ class PerfilHistorialController:
         }
 
     def listar_mis_trueques(self, usuario_orm, request=None) -> dict:
+        from ..negocio.trueque import es_intercambio_mutuo as es_mutuo
+        from ..negocio.publicacion import es_talento, es_necesidad
+
         trueques = self._trueque_repo.listar_por_usuario(usuario_orm.id)
 
-        # Serializar manualmente sin usar serializers para cumplir con el desacoplamiento de DRF.
-        # Necesitamos emisor_nombre, receptor_nombre, publicacion_emisor, publicacion_receptor, puede_confirmar.
+        # Verificar reseñas existentes para calcular pendiente_resena
         trueques_data = []
         for t in trueques:
             # Obtener nombres de emisor y receptor
@@ -186,34 +188,36 @@ class PerfilHistorialController:
             receptor = self._usu_repo.obtener_por_id(t.receptor_id)
             
             # Obtener publicaciones si existen
+            pub_emisor = None
             pub_emisor_data = None
             if t.publicacion_emisor_id:
-                pub = self._pub_repo.obtener_por_id(t.publicacion_emisor_id)
-                if pub:
+                pub_emisor = self._pub_repo.obtener_por_id(t.publicacion_emisor_id)
+                if pub_emisor:
                     pub_emisor_data = {
-                        "id": pub.id,
-                        "usuario": pub.usuario_id,
-                        "tipo": pub.tipo,
-                        "titulo": pub.titulo,
-                        "descripcion": pub.descripcion,
-                        "categoria": pub.categoria,
-                        "urgencia": pub.urgencia,
-                        "esta_activa": pub.esta_activa,
+                        "id": pub_emisor.id,
+                        "usuario": pub_emisor.usuario_id,
+                        "tipo": pub_emisor.tipo,
+                        "titulo": pub_emisor.titulo,
+                        "descripcion": pub_emisor.descripcion,
+                        "categoria": pub_emisor.categoria,
+                        "urgencia": pub_emisor.urgencia,
+                        "esta_activa": pub_emisor.esta_activa,
                     }
                     
+            pub_receptor = None
             pub_receptor_data = None
             if t.publicacion_receptor_id:
-                pub = self._pub_repo.obtener_por_id(t.publicacion_receptor_id)
-                if pub:
+                pub_receptor = self._pub_repo.obtener_por_id(t.publicacion_receptor_id)
+                if pub_receptor:
                     pub_receptor_data = {
-                        "id": pub.id,
-                        "usuario": pub.usuario_id,
-                        "tipo": pub.tipo,
-                        "titulo": pub.titulo,
-                        "descripcion": pub.descripcion,
-                        "categoria": pub.categoria,
-                        "urgencia": pub.urgencia,
-                        "esta_activa": pub.esta_activa,
+                        "id": pub_receptor.id,
+                        "usuario": pub_receptor.usuario_id,
+                        "tipo": pub_receptor.tipo,
+                        "titulo": pub_receptor.titulo,
+                        "descripcion": pub_receptor.descripcion,
+                        "categoria": pub_receptor.categoria,
+                        "urgencia": pub_receptor.urgencia,
+                        "esta_activa": pub_receptor.esta_activa,
                     }
 
             puede_confirmar = False
@@ -223,19 +227,60 @@ class PerfilHistorialController:
                 elif usuario_orm.id == t.receptor_id:
                     puede_confirmar = not t.receptor_confirmado
 
+            # Calcular pendiente_resena
+            pendiente_resena = False
+            if t.estado == "FINALIZADO":
+                pendiente_resena = not self._resena_repo.existe_resena(t.id, usuario_orm.id)
+
+            # Calcular es_intercambio_mutuo
+            tipo_emisor = getattr(pub_emisor, 'tipo', None) if pub_emisor else None
+            tipo_receptor = getattr(pub_receptor, 'tipo', None) if pub_receptor else None
+            intercambio_mutuo = es_mutuo(tipo_emisor, tipo_receptor)
+
+            # Calcular impacto_horas
+            impacto_horas = 0
+            if not intercambio_mutuo and pub_emisor and pub_receptor:
+                if es_talento(pub_emisor) and es_necesidad(pub_receptor):
+                    # Emisor presta talento, receptor recibe
+                    if usuario_orm.id == t.emisor_id:
+                        impacto_horas = 1
+                    else:
+                        impacto_horas = -1
+                elif es_necesidad(pub_emisor) and es_talento(pub_receptor):
+                    # Receptor presta talento, emisor recibe
+                    if usuario_orm.id == t.receptor_id:
+                        impacto_horas = 1
+                    else:
+                        impacto_horas = -1
+
+            # Calcular títulos de oferta
+            oferta_propia_titulo = None
+            oferta_contraparte_titulo = None
+            if usuario_orm.id == t.emisor_id:
+                oferta_propia_titulo = pub_emisor.titulo if pub_emisor else None
+                oferta_contraparte_titulo = pub_receptor.titulo if pub_receptor else None
+            else:
+                oferta_propia_titulo = pub_receptor.titulo if pub_receptor else None
+                oferta_contraparte_titulo = pub_emisor.titulo if pub_emisor else None
+
             trueques_data.append({
                 "id": t.id,
-                "emisor_id": t.emisor_id,
-                "receptor_id": t.receptor_id,
+                "emisor": t.emisor_id,
+                "receptor": t.receptor_id,
                 "emisor_nombre": emisor.nombre_real if emisor else "",
                 "receptor_nombre": receptor.nombre_real if receptor else "",
-                "publicacion_emisor_id": t.publicacion_emisor_id,
-                "publicacion_receptor_id": t.publicacion_receptor_id,
                 "publicacion_emisor": pub_emisor_data,
                 "publicacion_receptor": pub_receptor_data,
                 "estado": t.estado,
                 "puede_confirmar": puede_confirmar,
-                "fecha_creacion": None,
+                "pendiente_resena": pendiente_resena,
+                "emisor_confirmado": t.emisor_confirmado,
+                "receptor_confirmado": t.receptor_confirmado,
+                "codigo_confirmacion": t.codigo_confirmacion,
+                "es_intercambio_mutuo": intercambio_mutuo,
+                "impacto_horas": impacto_horas,
+                "oferta_propia_titulo": oferta_propia_titulo,
+                "oferta_contraparte_titulo": oferta_contraparte_titulo,
             })
 
         return {

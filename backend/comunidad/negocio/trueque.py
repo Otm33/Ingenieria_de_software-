@@ -174,9 +174,9 @@ def autorizar_actor_codigo(trueque, usuario):
         )
 
     estado = getattr(trueque, 'estado', None)
-    if estado != 'EN_CURSO':
+    if estado not in ('ACEPTADO', 'EN_CURSO'):
         return False, (
-            f"Acceso denegado: trueque en estado '{estado}', debe estar EN_CURSO."
+            f"Acceso denegado: trueque en estado '{estado}', debe estar ACEPTADO o EN_CURSO."
         )
 
     # Solo el receptor puede ingresar el codigo
