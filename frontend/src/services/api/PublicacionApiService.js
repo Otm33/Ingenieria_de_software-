@@ -1,4 +1,4 @@
-import ApiClient from './ApiClient.js'
+import ApiClient, { sharedApiClient } from './ApiClient.js'
 import Publicacion from '../../models/Publicacion.js'
 
 /**
@@ -7,7 +7,7 @@ import Publicacion from '../../models/Publicacion.js'
  */
 export default class PublicacionRepository {
   constructor(apiClient = null) {
-    this.apiClient = apiClient || new ApiClient()
+    this.apiClient = apiClient || sharedApiClient
 
     // Claves de caché
     this.cacheKeys = {
@@ -38,7 +38,8 @@ export default class PublicacionRepository {
       }
     )
 
-    return data
+    const publicacionesRaw = Array.isArray(data) ? data : (data.publicaciones || data.results || [])
+    return publicacionesRaw.map(p => new Publicacion(p))
   }
 
   /**

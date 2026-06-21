@@ -47,7 +47,7 @@
 
         <!-- Paso 2: Credenciales -->
         <div v-else-if="pasoActual === 2" class="form-grid">
-          <div class="form-group form-group--full">
+          <div class="form-group">
             <label for="username">Nombre de usuario</label>
             <input
               id="username"

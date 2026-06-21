@@ -39,8 +39,8 @@ def puede_confirmar(trueque: Union['AcuerdoTruequeDominio', object], usuario) ->
     """HU4: Verifica si un usuario puede confirmar la finalización."""
     estado = getattr(trueque, 'estado', None)
     
-    # Aceptar confirmaciones cuando el trueque está ACEPTADO o EN_CURSO
-    if estado not in ('ACEPTADO', 'EN_CURSO'):
+    # Solo se puede confirmar cuando el trueque está EN_CURSO (receptor aceptó)
+    if estado != 'EN_CURSO':
         return False, "Solo se pueden confirmar trueques en curso."
     
     # Obtener ID del usuario
@@ -54,7 +54,10 @@ def puede_confirmar(trueque: Union['AcuerdoTruequeDominio', object], usuario) ->
     emisor_id = getattr(trueque, 'emisor_id', None)
     receptor_id = getattr(trueque, 'receptor_id', None)
     
-    if uid in (emisor_id, receptor_id):
+    # Solo el receptor puede confirmar la finalización (el emisor solo comparte el código)
+    if uid == emisor_id:
+        return False, "El emisor no puede confirmar. Solo comparte el código con el receptor."
+    if uid == receptor_id:
         return True, "Puede confirmar"
     return False, "Usuario no es parte del trueque."
 
@@ -121,7 +124,7 @@ def es_intercambio_mutuo(tipo_pub_emisor: Optional[str], tipo_pub_receptor: Opti
 def autorizar_actor_finalizacion(trueque, usuario):
     """Verifica si el usuario puede finalizar este trueque.
 
-    Condiciones: ser participante + trueque en estado ACEPTADO o EN_CURSO.
+    Condiciones: ser participante + trueque en estado EN_CURSO.
     Retorna (autorizado, motivo).
     """
     uid = getattr(usuario, 'id', None)
@@ -141,12 +144,12 @@ def autorizar_actor_finalizacion(trueque, usuario):
             f"(emisor={emisor_id}, receptor={receptor_id})."
         )
 
-    # El trueque debe estar en un estado que permita finalizacion
+    # El trueque debe estar EN_CURSO para poder ingresar el codigo
     estado = getattr(trueque, 'estado', None)
-    if estado not in ('ACEPTADO', 'EN_CURSO'):
+    if estado != 'EN_CURSO':
         return False, (
             f"Acceso denegado: trueque en estado '{estado}', "
-            f"debe estar ACEPTADO o EN_CURSO."
+            f"debe estar EN_CURSO."
         )
 
     return True, f"Autorizado: usuario {uid} es participante del trueque."
@@ -174,9 +177,9 @@ def autorizar_actor_codigo(trueque, usuario):
         )
 
     estado = getattr(trueque, 'estado', None)
-    if estado not in ('ACEPTADO', 'EN_CURSO'):
+    if estado != 'EN_CURSO':
         return False, (
-            f"Acceso denegado: trueque en estado '{estado}', debe estar ACEPTADO o EN_CURSO."
+            f"Acceso denegado: trueque en estado '{estado}', debe estar EN_CURSO."
         )
 
     # Solo el receptor puede ingresar el codigo

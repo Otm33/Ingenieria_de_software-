@@ -70,3 +70,19 @@ class NotificacionService:
             tipos,
         )
         return actualizadas
+
+    def crear_notificacion_resena(self, destinatario, remitente, trueque=None, trueque_multiple=None, mensaje=None):
+        """Crea una notificación de solicitud de reseña."""
+        dest_id = getattr(destinatario, 'id', destinatario)
+        rem_id = getattr(remitente, 'id', remitente)
+        t_id = getattr(trueque, 'id', trueque) if trueque else None
+        tm_id = getattr(trueque_multiple, 'id', trueque_multiple) if trueque_multiple else None
+        
+        return self.notificacion_repository.crear_notificacion(
+            dest_id,
+            rem_id,
+            trueque_id=t_id,
+            mensaje=mensaje,
+            tipo="RESENA",
+            match_detalle={"trueque_multiple": tm_id} if tm_id else None,
+        )

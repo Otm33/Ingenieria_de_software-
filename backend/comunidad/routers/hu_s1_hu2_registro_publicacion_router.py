@@ -112,6 +112,13 @@ class LoginRouter(APIView):
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
 
+            # Verificar si el usuario está suspendido
+            if not usuario.is_active:
+                return Response(
+                    {"error": "Tu cuenta ha sido suspendida. Contacta al administrador."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             if usuario.username == "admin":
                 repo = UsuarioRepository()
                 admin_dom = repo.obtener_por_username("admin")

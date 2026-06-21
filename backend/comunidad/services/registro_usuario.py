@@ -21,6 +21,9 @@ class RegistroUsuarioService(RegistroUsuariosInterface):
             mensaje = "Comercio no autorizado para esta comunidad." if es_comercio else "Usuario no autorizado para esta comunidad."
             raise BusinessError(mensaje, status_code=403)
 
+        if self.usuario_repository.existe_email(email):
+            raise BusinessError("Este correo electronico ya esta registrado.", status_code=400)
+
         return True
 
     @transaction.atomic

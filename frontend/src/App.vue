@@ -22,8 +22,7 @@
 
         <nav v-if="authStore.usuarioActual?.esStaff || authStore.usuarioActual?.esSuperusuario" class="nav nav--admin" aria-label="Navegacion administrativa">
           <button class="nav__link" type="button" @click="seccionActiva = 'csv'">Usuarios CSV</button>
-          <button class="nav__link" type="button" @click="seccionActiva = 'admin-impacto-social'">Gestión Impacto Social</button>
-          <button class="nav__link" type="button" @click="seccionActiva = 'admin-panel'">Panel Admin</button>
+          <button class="nav__link" type="button" @click="seccionActiva = 'admin-panel'">Admin</button>
         </nav>
 
         <div v-if="authStore.usuarioActual" class="session-box">
@@ -108,10 +107,10 @@
         <Perfil v-else-if="seccionActiva === 'perfil'" />
         <Comunidad v-else-if="seccionActiva === 'comunidad'" />
         <RedComercial v-else-if="seccionActiva === 'red-comercial'" :usuario-actual="authStore.usuarioActual" />
+        <AdminImpactoSocial v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'impacto-social'" />
         <ImpactoSocial v-else-if="seccionActiva === 'impacto-social'" />
         <Register v-else-if="authStore.usuarioActual.esStaff && seccionActiva === 'registro'" />
         <AdminCSV v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'csv'" />
-        <AdminImpactoSocial v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'admin-impacto-social'" />
         <AdminPanel v-else-if="(authStore.usuarioActual.esStaff || authStore.usuarioActual.esSuperusuario) && seccionActiva === 'admin-panel'" />
         <Cartelera v-else />
       </template>
@@ -122,6 +121,7 @@
       :notificaciones="notificacionesVisibles"
       @realizar-trueque="abrirPropuestaDesdeNotificacion"
       @actualizado="cargarDatosHu4"
+      @ir-a-resena="irAReseñaDesdeNotificacion"
     />
 
     <ModalPropuesta
@@ -138,18 +138,21 @@
       @creada="onPropuestaCreada"
     />
 
+
     <ModalResena
-      v-model:visible="mostrarModalResena"
+      :visible="mostrarModalResena"
       :trueque-id="truequeResena?.id"
       :contraparte-nombre="truequeResena?.contraparteNombre"
       :estado-trueque="truequeResena?.estado"
+      @update:visible="(val) => { if (!val) onResenaCerrada() }"
       @enviada="onResenaEnviada"
     />
+
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import { useAuthStore } from './stores/auth.js'
 import { useCarteleraStore } from './stores/cartelera.js'
 import { useComunidadStore } from './stores/comunidad.js'
@@ -174,7 +177,16 @@ const truequeStore = useTruequeStore()
 const cargandoSesion = ref(true)
 const procesandoLogin = computed(() => authStore.loading)
 const loginError = computed(() => authStore.error)
-const seccionActiva = ref('cartelera')
+// Recuperar la sección guardada en la sesión (hash URL o sessionStorage)
+const _seccionInicial = (() => {
+  const secciones = ['cartelera', 'publicar', 'comunidad', 'red-comercial', 'impacto-social', 'perfil', 'csv', 'admin-panel']
+  const hash = window.location.hash.replace('#', '')
+  if (secciones.includes(hash)) return hash
+  const guardada = sessionStorage.getItem('tutruequeSección')
+  if (secciones.includes(guardada)) return guardada
+  return 'cartelera'
+})()
+const seccionActiva = ref(_seccionInicial)
 const tipoRegistroActivo = ref('')
 const mensajeBienvenida = ref('')
 const loginForm = reactive({ username: '', password: '' })
@@ -185,6 +197,19 @@ const mostrarModalNotificaciones = ref(false)
 const mostrarModalPropuesta = ref(false)
 const mostrarModalResena = ref(false)
 const truequeResena = ref(null)
+
+// IDs de trueques cuya reseña fue pospuesta ("Más tarde") en esta sesión de navegación.
+// Se usa solo en memoria (NO sessionStorage) para que al refrescar la página
+// el modal vuelva a aparecer si el trueque aún tiene reseña pendiente.
+const resenasPospuestas = ref(new Set())
+
+const posponerResena = (truequeId) => {
+  resenasPospuestas.value.add(String(truequeId))
+}
+
+const limpiarResenaPospuesta = (truequeId) => {
+  resenasPospuestas.value.delete(String(truequeId))
+}
 
 const propuestaConfig = reactive({
   receptorId: null,
@@ -246,7 +271,10 @@ const refrescarPerfil = async () => {
 const revisarResenaPendiente = () => {
   if (mostrarModalResena.value || mostrarModalNotificaciones.value) return
 
-  const pendiente = misTrueques.value.find((trueque) => trueque.pendiente_resena)
+  // Solo abrir el modal si el trueque no fue pospuesto por el usuario en esta sesión
+  const pendiente = misTrueques.value.find(
+    (trueque) => trueque.pendiente_resena && !resenasPospuestas.value.has(String(trueque.id))
+  )
   if (pendiente) {
     abrirModalResena(pendiente)
     return
@@ -255,26 +283,40 @@ const revisarResenaPendiente = () => {
 }
 
 const cargarDatosHu4 = async (opciones = {}) => {
-  const { omitirModalesAutomaticos = false } = opciones
+  const { omitirModalesAutomaticos = false, omitirResenas = false } = opciones
   if (!authStore.usuarioActual) return
 
   try {
-    const [notificacionesData, truequesData, misPublicaciones] = await Promise.all([
+    const [notificacionesData, truequesData, truequesMultiplesData, misPublicaciones] = await Promise.all([
       truequeStore.cargarNotificaciones(false),
       truequeStore.obtenerMisTrueques(),
+      truequeStore.obtenerMisTruequesMultiples(),
       carteleraStore.cargarMisPublicaciones(),
     ])
 
-    misTrueques.value = truequesData.trueques || []
+    // Combinar trueques simples y múltiples en un solo array
+    const truequesSimples = (truequesData.trueques || []).map(t => ({ ...t, es_multiple: false }))
+    const truequesMultiples = (truequesMultiplesData.trueques_multiple || []).map(t => ({ ...t, es_multiple: true }))
+    misTrueques.value = [...truequesSimples, ...truequesMultiples]
+    
     notificacionesVisibles.value = filtrarNotificacionesAccionables(
       notificacionesData.notificaciones,
     )
 
-    if (!omitirModalesAutomaticos) {
-      // Login normal: notificaciones primero; reseña solo si no hay panel de notificaciones.
+    const tieneResenaPendiente = misTrueques.value.some(
+      (trueque) => trueque.pendiente_resena && !resenasPospuestas.value.has(String(trueque.id))
+    )
+
+    if (!omitirModalesAutomaticos && !tieneResenaPendiente) {
+      // Login/navegación: mostrar notificaciones automáticamente
       if (notificacionesVisibles.value.length && !mostrarModalPropuesta.value && !mostrarModalNotificaciones.value) {
         mostrarModalNotificaciones.value = true
       }
+    }
+
+    // Siempre revisar reseñas pendientes (incluido durante polling)
+    // a menos que se indique explícitamente lo contrario
+    if (!omitirResenas) {
       revisarResenaPendiente()
     }
 
@@ -365,6 +407,39 @@ const abrirPropuestaDesdeNotificacion = async (notif) => {
   })
 }
 
+const irAReseñaDesdeNotificacion = async (notif) => {
+  mostrarModalNotificaciones.value = false
+  
+  // Marcar la notificación como leída
+  try {
+    await truequeStore.marcarNotificacionLeida(notif.id)
+  } catch {
+    // Ignorar error al marcar como leída
+  }
+  
+  // Si es trueque múltiple, navegar al perfil donde ya existe la interfaz de reseñas múltiples
+  if (notif.trueque_multiple_id) {
+    seccionActiva.value = 'perfil'
+    await cargarDatosHu4({ omitirModalesAutomaticos: true })
+    await refrescarPerfil()
+    return
+  }
+  
+  // Para trueques simples, buscar el trueque y abrir el modal
+  const trueque = misTrueques.value.find(
+    (item) => Number(item.id) === Number(notif.trueque_id) && !item.es_multiple
+  )
+  
+  if (trueque && trueque.pendiente_resena) {
+    abrirModalResena(trueque)
+  } else {
+    // Si no se encuentra, navegar al perfil
+    seccionActiva.value = 'perfil'
+    await cargarDatosHu4({ omitirModalesAutomaticos: true })
+    await refrescarPerfil()
+  }
+}
+
 const abrirPanelNotificaciones = async () => {
   await cargarDatosHu4()
   mostrarModalNotificaciones.value = true
@@ -384,13 +459,43 @@ const onPropuestaCreada = async () => {
 }
 
 const onResenaEnviada = async () => {
+  // Capturar el ID antes de limpiar el estado
+  const truequeId = truequeResena.value?.id
+
+  // Cerrar el modal inmediatamente
   mostrarModalResena.value = false
   truequeResena.value = null
-  await cargarDatosHu4()
+
+  // Marcar temporalmente como pospuesto para que revisarResenaPendiente()
+  // no vuelva a abrir el modal mientras recargamos datos del backend
+  // (el backend puede tardar en reflejar que la reseña ya fue enviada)
+  if (truequeId) {
+    posponerResena(truequeId)
+  }
+
+  // Recargar datos SIN revisar reseñas automáticas para evitar reapertura
+  await cargarDatosHu4({ omitirResenas: true })
   await refrescarPerfil()
+
+  // Ahora que los datos están frescos, limpiar el pospuesto
+  // El trueque ya no debería aparecer como pendiente_resena
+  if (truequeId) {
+    limpiarResenaPospuesta(truequeId)
+  }
+
   if (resenaEnviadaFn) {
     await resenaEnviadaFn()
   }
+}
+
+const onResenaCerrada = () => {
+  // El usuario cerró el modal sin enviar la reseña ("Más tarde")
+  // Posponer para esta sesión y no volver a abrir automáticamente
+  if (truequeResena.value?.id) {
+    posponerResena(truequeResena.value.id)
+  }
+  mostrarModalResena.value = false
+  truequeResena.value = null
 }
 
 const abrirModalResena = (trueque) => {
@@ -486,16 +591,30 @@ const mostrarRegistroComercio = () => {
 const cerrarSesion = async () => {
   await authStore.cerrarSesion()
   seccionActiva.value = 'cartelera'
+  sessionStorage.removeItem('tutruequeSección')
+  window.location.hash = ''
   notificacionesVisibles.value = []
   misTrueques.value = []
   mostrarModalNotificaciones.value = false
   mostrarModalPropuesta.value = false
   mostrarModalResena.value = false
+  resenasPospuestas.value = new Set()
 }
 
+
 watch(seccionActiva, async (nueva) => {
-  if (authStore.usuarioActual && ['perfil', 'comunidad', 'cartelera'].includes(nueva)) {
-    await cargarDatosHu4()
+  // Persistir la pestaña activa en la URL y en sessionStorage
+  window.location.hash = nueva
+  sessionStorage.setItem('tutruequeSección', nueva)
+
+  if (!authStore.usuarioActual) return
+
+  // Refrescar datos al cambiar de sección
+  await cargarDatosHu4({ omitirModalesAutomaticos: true })
+
+  // Si navegamos al perfil, refrescarlo explícitamente
+  if (nueva === 'perfil') {
+    await refrescarPerfil()
   }
 })
 
@@ -506,4 +625,41 @@ watch(mostrarModalPropuesta, (visible) => {
 })
 
 onMounted(cargarSesion)
+
+// Auto-refresh: recargar datos cada 30 segundos para mantener la página actualizada
+let pollingInterval = null
+
+const iniciarPolling = () => {
+  if (pollingInterval) return
+  pollingInterval = setInterval(async () => {
+    if (authStore.usuarioActual && !mostrarModalResena.value && !mostrarModalPropuesta.value) {
+      await cargarDatosHu4({ omitirModalesAutomaticos: true })
+      // Si el usuario está en el perfil, refrescarlo también
+      if (seccionActiva.value === 'perfil') {
+        await refrescarPerfil()
+      }
+    }
+  }, 15000)
+}
+
+const detenerPolling = () => {
+  if (pollingInterval) {
+    clearInterval(pollingInterval)
+    pollingInterval = null
+  }
+}
+
+watch(() => authStore.usuarioActual, (usuario) => {
+  if (usuario) {
+    iniciarPolling()
+  } else {
+    detenerPolling()
+  }
+})
+
+onMounted(() => {
+  if (authStore.usuarioActual) iniciarPolling()
+})
+
+onUnmounted(detenerPolling)
 </script>

@@ -2,10 +2,10 @@
   <section class="page">
     <div class="page-header">
       <div>
-        <p class="eyebrow">Sprint 2 HU3</p>
+        <p class="eyebrow">Administracion</p>
         <h2 class="page-title">Panel de Administracion</h2>
         <p class="page-description">
-          Gestion completa de la comunidad. Administra usuarios, publicaciones, trueques, resenas y saldos.
+          Gestion completa de la comunidad. Administra usuarios, publicaciones, trueques, resenas, saldos e impacto social.
         </p>
       </div>
     </div>
@@ -45,7 +45,7 @@
     </nav>
 
     <!-- Barra de busqueda -->
-    <div class="admin-search">
+    <div v-if="seccionActiva !== 'impacto-social'" class="admin-search">
       <input
         id="admin_busqueda"
         v-model="terminoBusqueda"
@@ -62,7 +62,7 @@
     <!-- Loading -->
     <div v-if="store.loading" class="loading-state">Cargando datos...</div>
 
-    <!-- Tabla Usuarios -->
+    <!-- ═══════ Tabla Usuarios ═══════ -->
     <section v-if="seccionActiva === 'usuarios' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Usuarios ({{ store.usuarios.length }})</h3>
@@ -78,9 +78,11 @@
                 <th>Email</th>
                 <th>Nombre</th>
                 <th>Horas</th>
+                <th>Estrellas</th>
                 <th>Tipo</th>
                 <th>Estado</th>
                 <th>Rol</th>
+                <th>Fecha registro</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -90,7 +92,8 @@
                 <td>{{ u.username }}</td>
                 <td>{{ u.email }}</td>
                 <td>{{ u.nombre_real }}</td>
-                <td>{{ u.horas_de_vida }}</td>
+                <td>{{ Number(u.horas_de_vida || 0).toFixed(1) }}</td>
+                <td>{{ u.promedio_estrellas ? Number(u.promedio_estrellas).toFixed(1) + '★' : '—' }}</td>
                 <td>
                   <span class="badge" :class="u.es_comercio ? 'badge--necesidad' : 'badge--talento'">
                     {{ u.es_comercio ? 'Comercio' : 'Usuario' }}
@@ -106,13 +109,21 @@
                   <span v-else-if="u.is_staff" class="badge badge--alta">Staff</span>
                   <span v-else class="badge badge--normal">Usuario</span>
                 </td>
+                <td>{{ formatearFecha(u.date_joined) }}</td>
                 <td class="admin-actions">
+                  <button
+                    class="button button--accent button--sm"
+                    type="button"
+                    @click="abrirEditarUsuario(u)"
+                  >
+                    Editar
+                  </button>
                   <button
                     class="button button--secondary button--sm"
                     type="button"
                     @click="toggleUsuario(u.id)"
                   >
-                    {{ u.is_active ? 'Desactivar' : 'Activar' }}
+                    {{ u.is_active ? 'Suspender' : 'Activar' }}
                   </button>
                   <button
                     v-if="!u.is_superuser"
@@ -138,7 +149,7 @@
       </div>
     </section>
 
-    <!-- Tabla Publicaciones -->
+    <!-- ═══════ Tabla Publicaciones ═══════ -->
     <section v-if="seccionActiva === 'publicaciones' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Publicaciones ({{ store.publicaciones.length }})</h3>
@@ -193,6 +204,7 @@
                 <th>Usuario</th>
                 <th>Urgencia</th>
                 <th>Estado</th>
+                <th>Descripcion</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -208,14 +220,22 @@
                 <td>{{ p.categoria }}</td>
                 <td>{{ p.usuario_username }}</td>
                 <td>
-                  <span class="badge" :class="'badge--' + p.urgencia.toLowerCase()">{{ p.urgencia }}</span>
+                  <span class="badge" :class="'badge--' + (p.urgencia || 'normal').toLowerCase()">{{ p.urgencia }}</span>
                 </td>
                 <td>
                   <span class="badge" :class="p.esta_activa ? 'badge--activa' : 'badge--pausada'">
                     {{ p.esta_activa ? 'Activa' : 'Pausada' }}
                   </span>
                 </td>
+                <td class="admin-text-truncate">{{ p.descripcion }}</td>
                 <td class="admin-actions">
+                  <button
+                    class="button button--accent button--sm"
+                    type="button"
+                    @click="abrirEditarPublicacion(p)"
+                  >
+                    Editar
+                  </button>
                   <button
                     class="button button--secondary button--sm"
                     type="button"
@@ -238,7 +258,7 @@
       </div>
     </section>
 
-    <!-- Tabla Trueques -->
+    <!-- ═══════ Tabla Trueques ═══════ -->
     <section v-if="seccionActiva === 'trueques' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Trueques ({{ store.trueques.length }})</h3>
@@ -250,9 +270,12 @@
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Emisor ID</th>
-                <th>Receptor ID</th>
+                <th>Emisor</th>
+                <th>Receptor</th>
+                <th>Pub. Emisor</th>
+                <th>Pub. Receptor</th>
                 <th>Estado</th>
+                <th>Codigo</th>
                 <th>Confirmaciones</th>
                 <th>Acciones</th>
               </tr>
@@ -260,11 +283,14 @@
             <tbody>
               <tr v-for="t in store.trueques" :key="t.id">
                 <td>{{ t.id }}</td>
-                <td>{{ t.emisor_id }}</td>
-                <td>{{ t.receptor_id }}</td>
+                <td>{{ t.emisor_nombre || t.emisor_id }}</td>
+                <td>{{ t.receptor_nombre || t.receptor_id }}</td>
+                <td>{{ t.publicacion_emisor_titulo || t.publicacion_emisor_id || '—' }}</td>
+                <td>{{ t.publicacion_receptor_titulo || t.publicacion_receptor_id || '—' }}</td>
                 <td>
                   <span class="badge" :class="badgeEstado(t.estado)">{{ t.estado }}</span>
                 </td>
+                <td>{{ t.codigo_confirmacion || '—' }}</td>
                 <td>
                   E: {{ t.emisor_confirmado ? 'Si' : 'No' }} |
                   R: {{ t.receptor_confirmado ? 'Si' : 'No' }}
@@ -292,7 +318,7 @@
       </div>
     </section>
 
-    <!-- Tabla Trueques Multiples -->
+    <!-- ═══════ Tabla Trueques Multiples ═══════ -->
     <section v-if="seccionActiva === 'trueques-multiples' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Trueques Multiples ({{ store.truequesMultiples.length }})</h3>
@@ -349,7 +375,7 @@
       </div>
     </section>
 
-    <!-- Tabla Resenas -->
+    <!-- ═══════ Tabla Resenas ═══════ -->
     <section v-if="seccionActiva === 'resenas' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Resenas ({{ store.resenas.length }})</h3>
@@ -373,8 +399,8 @@
               <tr v-for="r in store.resenas" :key="r.id">
                 <td>{{ r.id }}</td>
                 <td>#{{ r.trueque_id }}</td>
-                <td>{{ r.calificador_id }}</td>
-                <td>{{ r.calificado_id }}</td>
+                <td>{{ r.calificador_nombre || r.calificador_id }}</td>
+                <td>{{ r.calificado_nombre || r.calificado_id }}</td>
                 <td>{{ '★'.repeat(r.estrellas) }}{{ '☆'.repeat(5 - r.estrellas) }}</td>
                 <td class="admin-text-truncate">{{ r.comentario }}</td>
                 <td class="admin-actions">
@@ -393,7 +419,7 @@
       </div>
     </section>
 
-    <!-- Tabla Resenas Multiples -->
+    <!-- ═══════ Tabla Resenas Multiples ═══════ -->
     <section v-if="seccionActiva === 'resenas-multiples' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Resenas Multiples ({{ store.resenasMultiples.length }})</h3>
@@ -437,7 +463,7 @@
       </div>
     </section>
 
-    <!-- Tabla Saldos -->
+    <!-- ═══════ Tabla Saldos ═══════ -->
     <section v-if="seccionActiva === 'saldos' && !store.loading" class="panel">
       <div class="panel__header">
         <h3 class="panel__title">Saldos Comerciales ({{ store.saldos.length }})</h3>
@@ -475,7 +501,213 @@
       </div>
     </section>
 
-    <!-- Modal de confirmacion para eliminar -->
+    <!-- ═══════ Impacto Social (integrado) ═══════ -->
+    <section v-if="seccionActiva === 'impacto-social'" class="panel">
+      <div v-if="impactoCargando" class="loading-state">Cargando datos de impacto social...</div>
+      <template v-else>
+        <p v-if="impactoMensaje" class="alert alert--success">{{ impactoMensaje }}</p>
+        <p v-if="impactoError" class="alert alert--error">{{ impactoError }}</p>
+
+        <div class="metric-row admin-metric-row" style="margin-bottom: 16px;">
+          <div class="metric">
+            <span class="metric__value">{{ saldoFondo.toFixed(1) }}</span>
+            <span class="metric__label">Saldo Fondo Comunitario</span>
+          </div>
+          <div class="metric">
+            <span class="metric__value">{{ solicitudesPendientes.length }}</span>
+            <span class="metric__label">Solicitudes pendientes</span>
+          </div>
+          <div class="metric">
+            <span class="metric__value">{{ impactoUsuarios.length }}</span>
+            <span class="metric__label">Usuarios gestionables</span>
+          </div>
+        </div>
+
+        <!-- Solicitudes pendientes -->
+        <div class="panel" style="margin-bottom: 16px;">
+          <div class="panel__header">
+            <h3 class="panel__title">Solicitudes pendientes de aprobacion</h3>
+          </div>
+          <div class="panel__body">
+            <div v-if="solicitudesPendientes.length" class="table-container">
+              <table class="data-table">
+                <thead><tr><th>Solicitante</th><th>Categoria</th><th>Necesidad</th><th>Descripcion</th><th>Acciones</th></tr></thead>
+                <tbody>
+                  <tr v-for="s in solicitudesPendientes" :key="s.id">
+                    <td>{{ s.solicitante_nombre || '—' }}</td>
+                    <td>{{ s.categoria || '—' }}</td>
+                    <td><strong>{{ s.titulo }}</strong></td>
+                    <td>{{ s.descripcion }}</td>
+                    <td class="admin-actions">
+                      <button class="button button--primary button--sm" type="button"
+                        :disabled="procesandoImpactoId === s.id" @click="aprobarSolicitud(s.id)">Aprobar</button>
+                      <button class="button button--secondary button--sm" type="button"
+                        :disabled="procesandoImpactoId === s.id" @click="rechazarSolicitud(s.id)">Rechazar</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty-state">No hay solicitudes pendientes.</div>
+          </div>
+        </div>
+
+        <!-- Usuarios y estado social -->
+        <div class="panel" style="margin-bottom: 16px;">
+          <div class="panel__header">
+            <h3 class="panel__title">Usuarios y estado social</h3>
+          </div>
+          <div class="panel__body">
+            <div v-if="impactoUsuarios.length" class="table-container">
+              <table class="data-table">
+                <thead><tr><th>Usuario</th><th>Horas de vida</th><th>Horas donacion</th><th>Estado social</th></tr></thead>
+                <tbody>
+                  <tr v-for="u in impactoUsuarios" :key="u.id">
+                    <td><strong>{{ u.nombre_real }}</strong> <span style="color:var(--text-muted);">@{{ u.username }}</span></td>
+                    <td>{{ Number(u.horas_de_vida || 0).toFixed(1) }}</td>
+                    <td>{{ Number(u.horas_recibidas_donacion || 0).toFixed(1) }}</td>
+                    <td>
+                      <select class="select select--sm" :value="u.estado_social"
+                        :disabled="procesandoImpactoId === u.id"
+                        @change="actualizarEstadoSocial(u, $event.target.value)">
+                        <option value="NINGUNO">Ninguno</option>
+                        <option value="VULNERABLE">Vulnerable</option>
+                        <option value="CRITICO">Critico</option>
+                      </select>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty-state">No hay usuarios.</div>
+          </div>
+        </div>
+
+        <!-- Asignar desde fondo -->
+        <div class="panel">
+          <div class="panel__header"><h3 class="panel__title">Asignar horas desde el Fondo Comunitario</h3></div>
+          <div class="panel__body">
+            <p class="panel__hint" style="margin-bottom: 8px;">Solo usuarios marcados como Vulnerable o Critico pueden recibir asignaciones.</p>
+            <form class="form-grid" @submit.prevent="asignarDesdeFondo">
+              <div class="form-group">
+                <label for="imp_usuario">Usuario receptor</label>
+                <select id="imp_usuario" v-model.number="formImpacto.usuarioId" class="select" required>
+                  <option disabled :value="null">Selecciona usuario</option>
+                  <option v-for="u in usuariosAsignables" :key="u.id" :value="u.id">
+                    {{ u.nombre_real }} — {{ u.estado_social === 'CRITICO' ? 'Critico' : 'Vulnerable' }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="imp_solicitud">Solicitud aprobada</label>
+                <select id="imp_solicitud" v-model.number="formImpacto.solicitudId" class="select" required :disabled="!formImpacto.usuarioId">
+                  <option disabled :value="null">Selecciona causa</option>
+                  <option v-for="s in solicitudesReceptor" :key="s.id" :value="s.id">
+                    {{ s.titulo }} ({{ Number(s.horas_recibidas || 0).toFixed(1) }} h)
+                  </option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="imp_monto">Monto (horas)</label>
+                <input id="imp_monto" v-model="formImpacto.monto" class="input" type="number" min="0.5" step="0.1" required />
+                <span style="font-size: 0.82rem; color: var(--text-muted);">Fondo: {{ saldoFondo.toFixed(1) }} h</span>
+              </div>
+              <div class="form-group" style="display: flex; align-items: flex-end;">
+                <button class="button button--primary" type="submit" :disabled="procesandoAsignacion">
+                  {{ procesandoAsignacion ? 'Asignando...' : 'Asignar' }}
+                </button>
+              </div>
+            </form>
+            <p v-if="errorAsignacion" class="alert alert--error" style="margin-top: 8px;">{{ errorAsignacion }}</p>
+            <p v-if="mensajeAsignacion" class="alert alert--success" style="margin-top: 8px;">{{ mensajeAsignacion }}</p>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <!-- ═══════ Modal Editar Usuario ═══════ -->
+    <div v-if="modalEditarUsuario.visible" class="modal-overlay" @click.self="modalEditarUsuario.visible = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title">Editar usuario: {{ modalEditarUsuario.username }}</h3>
+          <button class="button button--secondary" type="button" @click="modalEditarUsuario.visible = false">X</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nombre real</label>
+              <input v-model="modalEditarUsuario.nombre_real" class="input" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input v-model="modalEditarUsuario.email" class="input" type="email" />
+            </div>
+            <div class="form-group">
+              <label>Horas de vida</label>
+              <input v-model="modalEditarUsuario.horas_de_vida" class="input" type="number" step="0.1" />
+            </div>
+            <div class="form-group">
+              <label>Tipo</label>
+              <select v-model="modalEditarUsuario.es_comercio" class="select">
+                <option :value="false">Usuario</option>
+                <option :value="true">Comercio</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="button button--primary" type="button" @click="guardarUsuario">Guardar</button>
+            <button class="button button--secondary" type="button" @click="modalEditarUsuario.visible = false">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ Modal Editar Publicacion ═══════ -->
+    <div v-if="modalEditarPub.visible" class="modal-overlay" @click.self="modalEditarPub.visible = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title">Editar publicacion #{{ modalEditarPub.id }}</h3>
+          <button class="button button--secondary" type="button" @click="modalEditarPub.visible = false">X</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Titulo</label>
+              <input v-model="modalEditarPub.titulo" class="input" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Categoria</label>
+              <input v-model="modalEditarPub.categoria" class="input" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Tipo</label>
+              <select v-model="modalEditarPub.tipo" class="select">
+                <option value="TALENTO">Talento</option>
+                <option value="NECESIDAD">Necesidad</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Urgencia</label>
+              <select v-model="modalEditarPub.urgencia" class="select">
+                <option value="NORMAL">Normal</option>
+                <option value="ALTA">Alta</option>
+                <option value="CRITICA">Critica</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group form-group--full">
+            <label>Descripcion</label>
+            <textarea v-model="modalEditarPub.descripcion" class="textarea" rows="3"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="button button--primary" type="button" @click="guardarPublicacion">Guardar</button>
+            <button class="button button--secondary" type="button" @click="modalEditarPub.visible = false">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ Modal Confirmar Eliminar ═══════ -->
     <div v-if="modalEliminar.visible" class="modal-overlay" @click.self="modalEliminar.visible = false">
       <div class="modal-content">
         <div class="modal-header">
@@ -496,38 +728,62 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useAdminPanelStore } from '../stores/adminPanel.js'
+import { useImpactoSocialStore } from '../stores/impactoSocial.js'
 
 const store = useAdminPanelStore()
+const impactoStore = useImpactoSocialStore()
 
 const seccionActiva = ref('usuarios')
 const terminoBusqueda = ref('')
 const mostrarFormPublicacion = ref(false)
 
 const formPublicacion = reactive({
-  titulo: '',
-  descripcion: '',
-  categoria: '',
-  tipo: 'TALENTO',
-  urgencia: 'NORMAL',
+  titulo: '', descripcion: '', categoria: '', tipo: 'TALENTO', urgencia: 'NORMAL',
 })
 
-const modalEliminar = reactive({
-  visible: false,
-  tipo: '',
-  id: null,
-  nombre: '',
+const modalEliminar = reactive({ visible: false, tipo: '', id: null, nombre: '' })
+const modalEditarUsuario = reactive({
+  visible: false, id: null, username: '', nombre_real: '', email: '', horas_de_vida: 0, es_comercio: false,
 })
+const modalEditarPub = reactive({
+  visible: false, id: null, titulo: '', descripcion: '', categoria: '', tipo: 'TALENTO', urgencia: 'NORMAL',
+})
+
+// Impacto social state
+const impactoCargando = ref(false)
+const impactoMensaje = ref('')
+const impactoError = ref('')
+const saldoFondo = ref(0)
+const solicitudesPendientes = ref([])
+const solicitudesAprobadas = ref([])
+const impactoUsuarios = ref([])
+const procesandoImpactoId = ref(null)
+const procesandoAsignacion = ref(false)
+const errorAsignacion = ref('')
+const mensajeAsignacion = ref('')
+const formImpacto = reactive({ usuarioId: null, solicitudId: null, monto: '' })
+
+const usuariosAsignables = computed(() =>
+  impactoUsuarios.value.filter((u) => ['VULNERABLE', 'CRITICO'].includes(u.estado_social))
+)
+const solicitudesReceptor = computed(() => {
+  if (!formImpacto.usuarioId) return []
+  return solicitudesAprobadas.value.filter((s) => s.solicitante === formImpacto.usuarioId)
+})
+
+watch(() => formImpacto.usuarioId, () => { formImpacto.solicitudId = null })
 
 const tabs = [
   { key: 'usuarios', label: 'Usuarios' },
   { key: 'publicaciones', label: 'Publicaciones' },
   { key: 'trueques', label: 'Trueques' },
-  { key: 'trueques-multiples', label: 'Trueques Multiples' },
+  { key: 'trueques-multiples', label: 'T. Multiples' },
   { key: 'resenas', label: 'Resenas' },
-  { key: 'resenas-multiples', label: 'Resenas Multiples' },
+  { key: 'resenas-multiples', label: 'R. Multiples' },
   { key: 'saldos', label: 'Saldos' },
+  { key: 'impacto-social', label: 'Impacto Social' },
 ]
 
 const estadosTrueque = ['PENDIENTE', 'ACEPTADO', 'RECHAZADO', 'EN_CURSO', 'FINALIZADO']
@@ -536,6 +792,10 @@ const estadosTruequeMultiple = ['PENDIENTE', 'ACEPTADO', 'RECHAZADO', 'EN_CURSO'
 let debounceTimer = null
 
 const cargarSeccion = async (seccion, busqueda = '') => {
+  if (seccion === 'impacto-social') {
+    await cargarImpactoSocial()
+    return
+  }
   const acciones = {
     'usuarios': () => store.cargarUsuarios(busqueda),
     'publicaciones': () => store.cargarPublicaciones(busqueda),
@@ -563,7 +823,7 @@ const buscarConDebounce = () => {
   }, 300)
 }
 
-// Acciones CRUD
+// CRUD
 const toggleUsuario = async (id) => {
   try { await store.toggleUsuario(id) } catch { /* error en store */ }
 }
@@ -596,6 +856,49 @@ const actualizarEstadoTruequeMultiple = async (id, estado) => {
   try { await store.actualizarEstadoTruequeMultiple(id, estado) } catch { /* error en store */ }
 }
 
+// Editar usuario
+const abrirEditarUsuario = (u) => {
+  Object.assign(modalEditarUsuario, {
+    visible: true, id: u.id, username: u.username,
+    nombre_real: u.nombre_real || '', email: u.email || '',
+    horas_de_vida: u.horas_de_vida || 0, es_comercio: u.es_comercio || false,
+  })
+}
+
+const guardarUsuario = async () => {
+  try {
+    await store.editarUsuario(modalEditarUsuario.id, {
+      nombre_real: modalEditarUsuario.nombre_real,
+      email: modalEditarUsuario.email,
+      horas_de_vida: Number(modalEditarUsuario.horas_de_vida),
+      es_comercio: modalEditarUsuario.es_comercio,
+    })
+    modalEditarUsuario.visible = false
+  } catch { /* error en store */ }
+}
+
+// Editar publicacion
+const abrirEditarPublicacion = (p) => {
+  Object.assign(modalEditarPub, {
+    visible: true, id: p.id, titulo: p.titulo || '', descripcion: p.descripcion || '',
+    categoria: p.categoria || '', tipo: p.tipo || 'TALENTO', urgencia: p.urgencia || 'NORMAL',
+  })
+}
+
+const guardarPublicacion = async () => {
+  try {
+    await store.editarPublicacion(modalEditarPub.id, {
+      titulo: modalEditarPub.titulo,
+      descripcion: modalEditarPub.descripcion,
+      categoria: modalEditarPub.categoria,
+      tipo: modalEditarPub.tipo,
+      urgencia: modalEditarPub.urgencia,
+    })
+    modalEditarPub.visible = false
+  } catch { /* error en store */ }
+}
+
+// Eliminar
 const confirmarEliminar = (tipo, id, nombre) => {
   modalEliminar.visible = true
   modalEliminar.tipo = tipo
@@ -616,27 +919,103 @@ const ejecutarEliminar = async () => {
   modalEliminar.visible = false
 }
 
+// Impacto social
+const cargarImpactoSocial = async () => {
+  impactoCargando.value = true
+  impactoError.value = ''
+  try {
+    const [pendientes, listaUsuarios, fondo, aprobadas] = await Promise.all([
+      impactoStore.obtenerSolicitudesPendientes(),
+      impactoStore.obtenerUsuariosAdmin(),
+      impactoStore.obtenerSaldoFondo(),
+      impactoStore.obtenerSolicitudesAprobadas(),
+    ])
+    solicitudesPendientes.value = pendientes.solicitudes || []
+    impactoUsuarios.value = listaUsuarios.usuarios || []
+    saldoFondo.value = Number(fondo.saldo || 0)
+    solicitudesAprobadas.value = aprobadas.solicitudes || []
+  } catch (err) {
+    impactoError.value = err.message || 'Error al cargar impacto social.'
+  } finally {
+    impactoCargando.value = false
+  }
+}
+
+const aprobarSolicitud = async (id) => {
+  procesandoImpactoId.value = id
+  impactoMensaje.value = ''
+  try {
+    const data = await impactoStore.aprobarSolicitud(id)
+    impactoMensaje.value = data.mensaje || 'Solicitud aprobada.'
+    await cargarImpactoSocial()
+  } catch (err) {
+    impactoError.value = err.message || 'Error al aprobar.'
+  } finally {
+    procesandoImpactoId.value = null
+  }
+}
+
+const rechazarSolicitud = async (id) => {
+  procesandoImpactoId.value = id
+  impactoMensaje.value = ''
+  try {
+    await impactoStore.rechazarSolicitud(id)
+    impactoMensaje.value = 'Solicitud rechazada.'
+    await cargarImpactoSocial()
+  } catch (err) {
+    impactoError.value = err.message || 'Error al rechazar.'
+  } finally {
+    procesandoImpactoId.value = null
+  }
+}
+
+const actualizarEstadoSocial = async (usuario, nuevoEstado) => {
+  if (usuario.estado_social === nuevoEstado) return
+  procesandoImpactoId.value = usuario.id
+  impactoMensaje.value = ''
+  try {
+    const data = await impactoStore.actualizarEstadoSocial(usuario.id, nuevoEstado)
+    usuario.estado_social = data.estado_social || nuevoEstado
+    impactoMensaje.value = `Estado social actualizado a ${nuevoEstado}.`
+  } catch (err) {
+    impactoError.value = err.message || 'Error al actualizar.'
+  } finally {
+    procesandoImpactoId.value = null
+  }
+}
+
+const asignarDesdeFondo = async () => {
+  errorAsignacion.value = ''
+  mensajeAsignacion.value = ''
+  procesandoAsignacion.value = true
+  try {
+    const data = await impactoStore.asignarDesdeFondo(formImpacto.usuarioId, formImpacto.solicitudId, Number(formImpacto.monto))
+    mensajeAsignacion.value = data.mensaje || 'Asignacion realizada.'
+    saldoFondo.value = Number(data.saldo_fondo ?? 0)
+    formImpacto.monto = ''
+    formImpacto.solicitudId = null
+    await cargarImpactoSocial()
+  } catch (err) {
+    errorAsignacion.value = err.message || 'Error al asignar.'
+  } finally {
+    procesandoAsignacion.value = false
+  }
+}
+
 const badgeEstado = (estado) => {
   const map = {
-    'PENDIENTE': 'badge--necesidad',
-    'ACEPTADO': 'badge--talento',
-    'RECHAZADO': 'badge--critica',
-    'EN_CURSO': 'badge--alta',
-    'FINALIZADO': 'badge--activa',
-    'EXPIRADO': 'badge--pausada',
+    'PENDIENTE': 'badge--necesidad', 'ACEPTADO': 'badge--talento',
+    'RECHAZADO': 'badge--critica', 'EN_CURSO': 'badge--alta',
+    'FINALIZADO': 'badge--activa', 'EXPIRADO': 'badge--pausada',
   }
   return map[estado] || 'badge--normal'
 }
 
 const formatearFecha = (fecha) => {
-  if (!fecha) return '-'
+  if (!fecha) return '—'
   try {
-    return new Date(fecha).toLocaleDateString('es-VE', {
-      year: 'numeric', month: 'short', day: 'numeric',
-    })
-  } catch {
-    return fecha
-  }
+    return new Date(fecha).toLocaleDateString('es-VE', { year: 'numeric', month: 'short', day: 'numeric' })
+  } catch { return fecha }
 }
 
 onMounted(async () => {
@@ -724,6 +1103,11 @@ onMounted(async () => {
   color: var(--danger);
   font-weight: 650;
   margin-top: 8px;
+}
+
+.panel__hint {
+  font-size: 0.85rem;
+  color: #666;
 }
 
 @media (max-width: 860px) {

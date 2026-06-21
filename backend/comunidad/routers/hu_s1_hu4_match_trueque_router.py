@@ -25,7 +25,7 @@ def _controlador():
     return MatchTruequeController(
         matchmaking_service=MatchmakingService(),
         publicacion_repository=PublicacionRepository(),
-        trueque_service=TruequeService(),
+        trueque_service=TruequeService(notificacion_service=NotificacionService()),
         trueque_repository=TruequeRepository(),
         notificacion_service=NotificacionService(),
         resena_service=ResenaService(),
@@ -49,6 +49,11 @@ class MatchmakingRouter(APIView):
             if "matches" in resultado:
                 resultado["matches"] = MatchEnriquecidoSerializer(
                     resultado["matches"], many=True
+                ).data
+            if "publicaciones_coincidentes" in resultado:
+                from ..serializers import PublicacionDominioSerializer
+                resultado["publicaciones_coincidentes"] = PublicacionDominioSerializer(
+                    resultado["publicaciones_coincidentes"], many=True
                 ).data
             return Response(resultado, status=status.HTTP_200_OK)
         except ValueError as e:

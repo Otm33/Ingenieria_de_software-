@@ -71,11 +71,11 @@ class Publicacion(models.Model):
 
 class AcuerdoTrueque(models.Model):
     ESTADOS = (
-        ('PENDIENTE', 'Pendiente'),
-        ('ACEPTADO', 'Aceptado'),
+        ('PENDIENTE', 'Pendiente'),       # Propuesta enviada, sin respuesta
+        ('EN_CURSO', 'En Curso'),          # Receptor aceptó, servicio en progreso
+        ('ACEPTADO', 'Aceptado'),          # Código ingresado, pendiente de reseñas
+        ('FINALIZADO', 'Finalizado'),      # Ambos calificaron
         ('RECHAZADO', 'Rechazado'),
-        ('EN_CURSO', 'En Curso'),
-        ('FINALIZADO', 'Finalizado'),
     )
 
     emisor = models.ForeignKey(Usuario, related_name='trueques_enviados', on_delete=models.CASCADE)
@@ -106,7 +106,7 @@ class Resena(models.Model):
 
 
 class NotificacionPropuesta(models.Model):
-    TIPO_CHOICES = [('MATCH', 'Match'), ('PROPUESTA', 'Propuesta')]
+    TIPO_CHOICES = [('MATCH', 'Match'), ('PROPUESTA', 'Propuesta'), ('RESENA', 'Reseña')]
     ESTADOS = (('PENDIENTE', 'Pendiente'), ('ACEPTADA', 'Aceptada'), ('RECHAZADA', 'Rechazada'), ('LEIDA', 'Leída'))
 
     tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='PROPUESTA')

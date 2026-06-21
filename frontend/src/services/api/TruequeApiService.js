@@ -1,4 +1,4 @@
-import ApiClient from './ApiClient.js'
+import ApiClient, { sharedApiClient } from './ApiClient.js'
 
 /**
  * TruequeRepository - Repositorio para operaciones de trueques
@@ -6,7 +6,7 @@ import ApiClient from './ApiClient.js'
  */
 export default class TruequeRepository {
   constructor(apiClient = null) {
-    this.apiClient = apiClient || new ApiClient()
+    this.apiClient = apiClient || sharedApiClient
     
     // Claves de caché
     this.cacheKeys = {

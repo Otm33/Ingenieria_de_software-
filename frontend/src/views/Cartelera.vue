@@ -483,7 +483,7 @@ const verCoincidencias = async () => {
 
       await hu4.abrirModalPropuesta({
         receptorId: match.usuario.id,
-        receptorNombre: match.usuario.nombreReal,
+        receptorNombre: match.usuario.nombre_real,
         misPublicaciones,
         publicacionesVecino: perfilVecino.publicaciones || [],
         tipoMiPublicacion: tipoMi,

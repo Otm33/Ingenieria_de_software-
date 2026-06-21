@@ -158,9 +158,6 @@ export const useResenaStore = defineStore('resena', () => {
       if (!comentario?.trim()) {
         throw new Error('El comentario es requerido.')
       }
-      if (comentario.length < 10) {
-        throw new Error('El comentario debe tener al menos 10 caracteres.')
-      }
       if (comentario.length > 500) {
         throw new Error('El comentario no puede exceder 500 caracteres.')
       }

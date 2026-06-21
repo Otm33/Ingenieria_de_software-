@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 from ..controladores.hu_s2_hu4_trueque_multiple_controller import TruequeMultipleController
 from ..dto.request_models import ResenaMultipleRequest
 from ..services import ResenaMultipleService, TruequeMultipleService
+from ..services.notificacion import NotificacionService
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
 
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _controlador():
     return TruequeMultipleController(
-        trueque_multiple_service=TruequeMultipleService(),
+        trueque_multiple_service=TruequeMultipleService(notificacion_service=NotificacionService()),
         resena_multiple_service=ResenaMultipleService(),
     )
 

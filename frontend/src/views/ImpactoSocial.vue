@@ -102,35 +102,35 @@
         <div class="panel__header"><h3 class="panel__title">Mis solicitudes</h3></div>
         <div class="panel__body">
           <div v-if="misSolicitudes.length" class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Categoría</th><th>Título</th><th>Estado</th>
-                  <th>Horas recibidas</th><th>Horas solidarias disp.</th>
-                  <th>Necesidad vinculada</th><th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="s in misSolicitudes" :key="s.id">
-                  <td>{{ s.categoria || '—' }}</td>
-                  <td><strong>{{ s.titulo }}</strong><p class="panel__hint panel__hint--inline">{{ s.descripcion }}</p></td>
-                  <td><span :class="['badge', claseEstadoSolicitud(s.estado)]">{{ etiquetaEstadoSolicitud(s.estado) }}</span></td>
-                  <td>{{ Number(s.horas_recibidas || 0).toFixed(1) }}</td>
-                  <td>{{ Number(s.horas_solidarias_disponibles || 0).toFixed(1) }}</td>
-                  <td>{{ s.necesidad_activa || s.publicacion_id ? 'Sí' : 'No' }}</td>
-                  <td class="acciones-celda">
-                    <button
-                      v-if="s.estado === 'APROBADA' && !s.publicacion_id && !s.necesidad_activa"
-                      class="button button--secondary button--compact" type="button"
-                      :disabled="procesandoActivacionId === s.id"
-                      @click="activarNecesidad(s.id)"
-                    >
-                      {{ procesandoActivacionId === s.id ? 'Activando...' : 'Activar necesidad' }}
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="data-table-grid">
+              <div class="table-header">
+                <div class="table-cell">Categoría</div>
+                <div class="table-cell">Título</div>
+                <div class="table-cell">Estado</div>
+                <div class="table-cell">Horas recibidas</div>
+                <div class="table-cell">Horas solidarias disp.</div>
+                <div class="table-cell">Necesidad vinculada</div>
+                <div class="table-cell">Acciones</div>
+              </div>
+              <div v-for="s in misSolicitudes" :key="s.id" class="table-row">
+                <div class="table-cell">{{ s.categoria || '—' }}</div>
+                <div class="table-cell"><strong>{{ s.titulo }}</strong></div>
+                <div class="table-cell"><span :class="['badge', claseEstadoSolicitud(s.estado)]">{{ etiquetaEstadoSolicitud(s.estado) }}</span></div>
+                <div class="table-cell">{{ Number(s.horas_recibidas || 0).toFixed(1) }}</div>
+                <div class="table-cell">{{ Number(s.horas_solidarias_disponibles || 0).toFixed(1) }}</div>
+                <div class="table-cell">{{ s.necesidad_activa || s.publicacion_id ? 'Sí' : 'No' }}</div>
+                <div class="table-cell acciones-celda">
+                  <button
+                    v-if="s.estado === 'APROBADA' && !s.necesidad_activa"
+                    class="button button--secondary button--compact" type="button"
+                    :disabled="procesandoActivacionId === s.id"
+                    @click="activarNecesidad(s.id)"
+                  >
+                    {{ procesandoActivacionId === s.id ? 'Activando...' : 'Activar necesidad' }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
           <div v-else class="empty-state">Aún no has publicado solicitudes de apoyo.</div>
           <p v-if="mensajeActivacion" class="alert alert--success">{{ mensajeActivacion }}</p>
@@ -250,9 +250,15 @@
             <form class="form-grid" @submit.prevent="confirmarDonacion">
               <div class="form-group form-group--full">
                 <label for="monto_donacion">Monto en horas</label>
-                <input id="monto_donacion" v-model="modalDonacion.monto" class="input" type="number" min="0.5" step="0.1" :max="saldoDonable > 0 ? saldoDonable : undefined" required />
-                <p class="panel__hint panel__hint--inline">Mínimo 0.5 h. Máximo disponible: {{ saldoDonable.toFixed(1) }} h</p>
+                <input id="monto_donacion" v-model="modalDonacion.monto" class="input" type="number" min="0.5" step="0.1" :max="saldoDonable > 0 ? saldoDonable : undefined" required :disabled="!puedeDonar" />
+                <p class="panel__hint panel__hint--inline" style="line-height: 1.4;">
+                  Mínimo: 0.5 h<br />
+                  Disponible: {{ saldoDonable.toFixed(1) }} h
+                </p>
               </div>
+              <p v-if="!puedeDonar" class="alert alert--error" style="margin-bottom: 1rem;">
+                No tienes horas disponibles para donar.
+              </p>
               <div class="modal-footer">
                 <button class="button button--secondary" type="button" @click="cerrarModalDonacion">Cancelar</button>
                 <button class="button button--primary" type="submit" :disabled="procesandoDonacion || !puedeDonar">
@@ -318,7 +324,7 @@ const totalHorasDonadas = computed(() =>
 
 const causasDonables = computed(() => {
   const miId = authStore.usuarioActual?.id
-  return causasAprobadas.value.filter((c) => Number(c.solicitante) !== Number(miId))
+  return causasAprobadas.value.filter((c) => Number(c.solicitante_id) !== Number(miId))
 })
 
 const mostrarBadgeEstadoSocial = computed(() => ['VULNERABLE', 'CRITICO'].includes(estadoSocial.value))
@@ -481,7 +487,14 @@ onMounted(cargarDatos)
 .alert__lista { margin: 0 0 0.75rem; padding-left: 1.25rem; }
 .alert__lista li { margin-bottom: 0.35rem; }
 .alert__nota { margin: 0; font-size: 0.92rem; }
-.acciones-celda { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.acciones-celda { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .button--compact { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
+.data-table-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.5rem; }
+.table-header { display: contents; font-weight: 600; }
+.table-header .table-cell { font-weight: 600; color: #333; }
+.table-row { display: contents; }
+.table-cell { padding: 0.75rem 0.5rem; display: flex; align-items: center; }
+.table-cell:first-child { padding-left: 0; }
+.table-cell:last-child { padding-right: 0; }
 @media (max-width: 640px) { .metric-row--impacto { grid-template-columns: 1fr; } }
 </style>

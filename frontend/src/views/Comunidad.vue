@@ -306,7 +306,14 @@ const cargarComunidad = async () => {
 
   try {
     const data = await comunidadStore.cargarComunidad();
-    miembros.value = data.miembros || [];
+    // Ordenar: miembros activos primero, luego alfabéticamente
+    const lista = data.miembros || [];
+    lista.sort((a, b) => {
+      if (a.es_miembro_activo && !b.es_miembro_activo) return -1;
+      if (!a.es_miembro_activo && b.es_miembro_activo) return 1;
+      return (a.nombre_real || '').localeCompare(b.nombre_real || '');
+    });
+    miembros.value = lista;
   } catch (err) {
     error.value = err.message || 'No se pudo cargar el directorio de la comunidad.';
     miembros.value = [];

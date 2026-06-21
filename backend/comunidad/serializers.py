@@ -151,21 +151,49 @@ class AcuerdoTruequeSerializer(serializers.ModelSerializer):
             return False
         if request.user not in [obj.emisor, obj.receptor]:
             return False
-        if obj.estado != "ACEPTADO":
+        # Solo en EN_CURSO (receptor aceptó, servicio en progreso)
+        if obj.estado != "EN_CURSO":
             return False
+        # Solo el receptor puede confirmar (el emisor solo comparte el código)
         if request.user == obj.emisor:
-            return not obj.emisor_confirmado
+            return False
         return not obj.receptor_confirmado
 
     def get_pendiente_resena(self, obj):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         request = self.context.get("request")
+        logger.info(f"pendiente_resena - trueque_id={obj.id}, estado={obj.estado}, request={request is not None}")
+        
         if not request or not request.user.is_authenticated:
+            logger.info("pendiente_resena - no request or not authenticated")
             return False
+        
+        # Reseñas pendientes solo en FINALIZADO (código validado)
         if obj.estado != "FINALIZADO":
+            logger.info(f"pendiente_resena - estado no válido: {obj.estado}")
             return False
-        if request.user not in [obj.emisor, obj.receptor]:
+        
+        # Comparar IDs en lugar de objetos
+        user_id = request.user.id
+        emisor_id = getattr(obj.emisor, 'id', obj.emisor) if hasattr(obj.emisor, 'id') else obj.emisor
+        receptor_id = getattr(obj.receptor, 'id', obj.receptor) if hasattr(obj.receptor, 'id') else obj.receptor
+        
+        logger.info(f"pendiente_resena - user_id={user_id}, emisor_id={emisor_id}, receptor_id={receptor_id}")
+        
+        if user_id not in (emisor_id, receptor_id):
+            logger.info("pendiente_resena - usuario no es participante")
             return False
-        return not Resena.objects.filter(trueque=obj, calificador=request.user).exists()
+        
+        # Determinar la contraparte del usuario
+        contraparte_id = receptor_id if user_id == emisor_id else emisor_id
+        
+        # Verificar si el usuario ya calificó a su contraparte específica
+        tiene_resena = Resena.objects.filter(trueque=obj, calificador_id=user_id, calificado_id=contraparte_id).exists()
+        logger.info(f"pendiente_resena - contraparte_id={contraparte_id}, tiene_resena={tiene_resena}, resultado={not tiene_resena}")
+        
+        return not tiene_resena
 
 
 class PublicacionDominioSerializer(serializers.Serializer):
@@ -227,6 +255,8 @@ class NotificacionSerializer(serializers.ModelSerializer):
             acciones.extend(["aceptar", "rechazar"])
         if obj.tipo == "MATCH" and obj.estado == "PENDIENTE":
             acciones.append("crear_propuesta")
+        if obj.tipo == "RESENA" and obj.estado == "PENDIENTE":
+            acciones.append("dejar_resena")
         return acciones
 
 
@@ -295,6 +325,7 @@ class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
     todos_aceptaron = serializers.SerializerMethodField()
     esta_expirado = serializers.SerializerMethodField()
     todos_pares_confirmaron = serializers.SerializerMethodField()
+    pendiente_resena = serializers.SerializerMethodField()
     
     class Meta:
         model = AcuerdoTruequeMultiple
@@ -312,6 +343,7 @@ class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
             'codigo_par1', 'codigo_par2', 'codigo_par3',
             'creado_el', 'actualizado_el', 'expira_el',
             'puede_aceptar', 'todos_aceptaron', 'esta_expirado', 'todos_pares_confirmaron',
+            'pendiente_resena',
         ]
     
     def get_puede_aceptar(self, obj):
@@ -345,6 +377,53 @@ class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
     
     def get_todos_pares_confirmaron(self, obj):
         return obj.todos_pares_confirmaron()
+    
+    def get_pendiente_resena(self, obj):
+        from backend.comunidad.models import ResenaMultiple
+        from ..negocio.trueque_multiple import obtener_pares_del_usuario
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        # Reseñas pendientes en FINALIZADO
+        if obj.estado != 'FINALIZADO':
+            return False
+        # Verificar si el usuario es participante
+        if not obj.participante(request.user):
+            return False
+        
+        # Obtener los pares en los que participa el usuario
+        pares_usuario = obtener_pares_del_usuario(obj, request.user)
+        
+        # Para cada par, verificar si el usuario ya calificó a su contraparte
+        for par in pares_usuario:
+            # Obtener contraparte del usuario en este par
+            contraparte_id = None
+            if par == 1:
+                if obj.emisor1_id == request.user.id:
+                    contraparte_id = obj.receptor1_id
+                else:
+                    contraparte_id = obj.emisor1_id
+            elif par == 2:
+                if obj.emisor2_id == request.user.id:
+                    contraparte_id = obj.receptor2_id
+                else:
+                    contraparte_id = obj.emisor2_id
+            elif par == 3:
+                if obj.emisor3_id == request.user.id:
+                    contraparte_id = obj.receptor3_id
+                else:
+                    contraparte_id = obj.emisor3_id
+            
+            # Si hay contraparte y no existe reseña, hay reseña pendiente
+            if contraparte_id and contraparte_id != request.user.id:
+                if not ResenaMultiple.objects.filter(
+                    trueque_multiple=obj, 
+                    calificador=request.user, 
+                    calificado_id=contraparte_id
+                ).exists():
+                    return True
+        
+        return False
 
 
 class ResenaMultipleSerializer(serializers.ModelSerializer):

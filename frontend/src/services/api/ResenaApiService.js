@@ -1,4 +1,4 @@
-import ApiClient from './ApiClient.js'
+import ApiClient, { sharedApiClient } from './ApiClient.js'
 
 /**
  * ResenaRepository - Repositorio para operaciones de reseñas
@@ -6,7 +6,7 @@ import ApiClient from './ApiClient.js'
  */
 export default class ResenaRepository {
   constructor(apiClient = null) {
-    this.apiClient = apiClient || new ApiClient()
+    this.apiClient = apiClient || sharedApiClient
     
     // Claves de caché
     this.cacheKeys = {
@@ -24,8 +24,10 @@ export default class ResenaRepository {
       comentario,
     })
     
-    // Invalidar caché de notificaciones y trueques
+    // Invalidar caché de notificaciones Y de mis-trueques
+    // (mis-trueques contiene el campo pendiente_resena que cambia al registrar reseña)
     this.apiClient.invalidate(this.cacheKeys.notificaciones)
+    this.apiClient.invalidate('trueques:mis')
     
     return result
   }

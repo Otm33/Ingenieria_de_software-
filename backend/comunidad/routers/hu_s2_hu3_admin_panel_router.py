@@ -99,6 +99,20 @@ class AdminPanelEliminarUsuarioRouter(APIView):
             return _respuesta_error_servidor(e)
 
 
+class AdminPanelEditarUsuarioRouter(APIView):
+    """PATCH admin/panel/usuarios/<id>/editar/"""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def patch(self, request, usuario_id):
+        try:
+            return _respuesta_ok(_controlador().editar_usuario(request, usuario_id))
+        except ValueError as e:
+            return _respuesta_error(e)
+        except Exception as e:
+            return _respuesta_error_servidor(e)
+
+
 # ── Publicaciones ─────────────────────────────────────────────────────────────
 
 class AdminPanelPublicacionesRouter(APIView):
@@ -150,6 +164,20 @@ class AdminPanelEliminarPublicacionRouter(APIView):
     def delete(self, request, publicacion_id):
         try:
             return _respuesta_ok(_controlador().eliminar_publicacion(request, publicacion_id))
+        except ValueError as e:
+            return _respuesta_error(e)
+        except Exception as e:
+            return _respuesta_error_servidor(e)
+
+
+class AdminPanelEditarPublicacionRouter(APIView):
+    """PATCH admin/panel/publicaciones/<id>/editar/"""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CsrfExemptSessionAuthentication]
+
+    def patch(self, request, publicacion_id):
+        try:
+            return _respuesta_ok(_controlador().editar_publicacion(request, publicacion_id))
         except ValueError as e:
             return _respuesta_error(e)
         except Exception as e:

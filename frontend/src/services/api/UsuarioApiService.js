@@ -1,4 +1,4 @@
-import ApiClient from './ApiClient.js'
+import ApiClient, { sharedApiClient } from './ApiClient.js'
 
 /**
  * UsuarioRepository - Repositorio para operaciones de usuarios
@@ -6,7 +6,7 @@ import ApiClient from './ApiClient.js'
  */
 export default class UsuarioRepository {
   constructor(apiClient = null) {
-    this.apiClient = apiClient || new ApiClient()
+    this.apiClient = apiClient || sharedApiClient
     
     // Claves de caché
     this.cacheKeys = {

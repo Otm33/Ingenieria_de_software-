@@ -56,6 +56,10 @@ class UsuarioRepository(IUsuarioRepository):
         from backend.comunidad.models import Usuario as UsuarioORM
         return UsuarioORM.objects.filter(username=username).exists()
 
+    def existe_email(self, email: str) -> bool:
+        from backend.comunidad.models import Usuario as UsuarioORM
+        return UsuarioORM.objects.filter(email=email).exists()
+
     def obtener_por_id_bloqueado(self, usuario_id: int) -> Optional[UsuarioDominio]:
         from backend.comunidad.models import Usuario as UsuarioORM
         try:
@@ -650,6 +654,11 @@ class ResenaRepository(IResenaRepository):
     def eliminar(self, resena_id):
         from backend.comunidad.models import Resena as ResenaORM
         ResenaORM.objects.filter(id=resena_id).delete()
+
+    def existe_resena(self, trueque_id, usuario_id):
+        """Verifica si un usuario ya dejó reseña para un trueque."""
+        from backend.comunidad.models import Resena as ResenaORM
+        return ResenaORM.objects.filter(trueque_id=trueque_id, calificador_id=usuario_id).exists()
 
 
 # ── Notificación ──────────────────────────────────────────────────────────────

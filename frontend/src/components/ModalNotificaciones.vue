@@ -12,7 +12,7 @@
         <div v-else class="match-resultado">
           <article v-for="notif in notificaciones" :key="notif.id" class="match-item match-item--stacked">
             <div class="match-item-info">
-              <strong>{{ notif.tipo === 'MATCH' ? 'Match automático' : 'Propuesta de trueque' }}</strong>
+              <strong>{{ notif.tipo === 'MATCH' ? 'Match automático' : notif.tipo === 'RESENA' ? 'Solicitud de reseña' : 'Propuesta de trueque' }}</strong>
               <span>{{ notif.mensaje }}</span>
 
               <div
@@ -81,6 +81,15 @@
                 </button>
               </template>
               <button
+                v-if="notif.tipo === 'RESENA'"
+                class="button button--primary button--small"
+                type="button"
+                :disabled="procesandoId === notif.id"
+                @click="irAReseña(notif)"
+              >
+                Dejar reseña
+              </button>
+              <button
                 class="button button--secondary button--small"
                 type="button"
                 :disabled="procesandoId === notif.id"
@@ -113,7 +122,7 @@ const props = defineProps({
   notificaciones: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['update:visible', 'realizar-trueque', 'actualizado'])
+const emit = defineEmits(['update:visible', 'realizar-trueque', 'actualizado', 'ir-a-resena'])
 
 import { useTruequeStore } from '../stores/trueque.js'
 
@@ -185,5 +194,10 @@ const responder = async (notif, accion) => {
   } finally {
     procesandoId.value = null
   }
+}
+
+const irAReseña = (notif) => {
+  errorPorId[notif.id] = ''
+  emit('ir-a-resena', notif)
 }
 </script>

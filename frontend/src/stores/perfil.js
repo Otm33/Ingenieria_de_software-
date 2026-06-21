@@ -94,7 +94,7 @@ export const usePerfilStore = defineStore('perfil', () => {
         // Actualizar estado local
         const trueque = misTrueques.value.find(t => t.id === truequeId)
         if (trueque) {
-          trueque.estado = 'FINALIZADO'
+          trueque.estado = 'ACEPTADO'
           trueque.emisor_confirmado = true
           trueque.receptor_confirmado = true
         }

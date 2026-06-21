@@ -48,6 +48,14 @@ export default class AdminPanelRepository {
     })
   }
 
+  async editarUsuario(usuarioId, datos) {
+    return await this._request(`admin/panel/usuarios/${usuarioId}/editar/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    })
+  }
+
   async eliminarUsuario(usuarioId) {
     return await this._request(`admin/panel/usuarios/${usuarioId}/`, {
       method: 'DELETE',
@@ -73,6 +81,14 @@ export default class AdminPanelRepository {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esta_activa: estaActiva }),
+    })
+  }
+
+  async editarPublicacion(publicacionId, datos) {
+    return await this._request(`admin/panel/publicaciones/${publicacionId}/editar/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
     })
   }
 

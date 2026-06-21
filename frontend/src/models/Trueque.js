@@ -7,7 +7,7 @@
  * Normaliza los datos snake_case del backend a camelCase para Vue.
  *
  * Contiene métodos de negocio duplicados del backend para validación local:
- * - Estados: PENDIENTE → ACEPTADO → EN_CURSO → FINALIZADO (o RECHAZADO)
+ * - Estados: PENDIENTE → EN_CURSO → ACEPTADO → FINALIZADO (o RECHAZADO)
  * - Verificar si el usuario puede confirmar la finalización
  * - Calcular el impacto en horas de vida para cada participante
  * - Generar etiquetas y clases CSS según el estado
@@ -126,9 +126,9 @@ export default class Trueque {
   etiquetaEstado() {
     const etiquetas = {
       'PENDIENTE': 'Pendiente',
+      'EN_CURSO': 'En Curso',
       'ACEPTADO': 'Aceptado',
       'RECHAZADO': 'Rechazado',
-      'EN_CURSO': 'En Curso',
       'FINALIZADO': 'Finalizado'
     }
     return etiquetas[this.estado] || this.estado
@@ -152,26 +152,21 @@ export default class Trueque {
    * Verifica si el usuario puede confirmar la finalización
    */
   puedeConfirmar(usuarioId) {
-    if (!this.estaEnCurso()) {
-      return false
-    }
+    return this.estado === 'EN_CURSO'
+  }
 
-    if (usuarioId === this.emisor?.id && !this.emisorConfirmado) {
-      return true
-    }
-
-    if (usuarioId === this.receptor?.id && !this.receptorConfirmado) {
-      return true
-    }
-
-    return false
+  /**
+   * Verifica si el trueque está en estado aceptado (código ingresado, pendiente de reseñas)
+   */
+  estaAceptado() {
+    return this.estado === 'ACEPTADO'
   }
 
   /**
    * Verifica si el trueque tiene una reseña pendiente para el usuario
    */
   pendienteResena(usuarioId) {
-    return this.estaFinalizado() && !this.emisorConfirmado
+    return this.estaAceptado() && !this.emisorConfirmado
   }
 
   /**

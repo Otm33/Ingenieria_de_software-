@@ -93,6 +93,18 @@ export const useAdminPanelStore = defineStore('adminPanel', () => {
     }
   }
 
+  async function editarUsuario(usuarioId, datos) {
+    try {
+      const data = await api.editarUsuario(usuarioId, datos)
+      const idx = usuarios.value.findIndex((u) => u.id === usuarioId)
+      if (idx !== -1 && data.usuario) usuarios.value[idx] = data.usuario
+      return data
+    } catch (err) {
+      error.value = err.message || 'Error al editar usuario.'
+      throw err
+    }
+  }
+
   // Publicaciones
   async function cargarPublicaciones(busqueda = '') {
     loading.value = true
@@ -139,6 +151,18 @@ export const useAdminPanelStore = defineStore('adminPanel', () => {
       return data
     } catch (err) {
       error.value = err.message || 'Error al eliminar publicacion.'
+      throw err
+    }
+  }
+
+  async function editarPublicacion(publicacionId, datos) {
+    try {
+      const data = await api.editarPublicacion(publicacionId, datos)
+      const idx = publicaciones.value.findIndex((p) => p.id === publicacionId)
+      if (idx !== -1 && data.publicacion) publicaciones.value[idx] = data.publicacion
+      return data
+    } catch (err) {
+      error.value = err.message || 'Error al editar publicacion.'
       throw err
     }
   }
@@ -294,8 +318,8 @@ export const useAdminPanelStore = defineStore('adminPanel', () => {
   return {
     dashboard, usuarios, publicaciones, trueques, truequesMultiples,
     resenas, resenasMultiples, saldos, loading, error,
-    cargarDashboard, cargarUsuarios, toggleUsuario, cambiarRol, eliminarUsuario,
-    cargarPublicaciones, crearPublicacion, moderarPublicacion, eliminarPublicacion,
+    cargarDashboard, cargarUsuarios, toggleUsuario, cambiarRol, eliminarUsuario, editarUsuario,
+    cargarPublicaciones, crearPublicacion, moderarPublicacion, eliminarPublicacion, editarPublicacion,
     cargarTrueques, actualizarEstadoTrueque, eliminarTrueque,
     cargarTruequesMultiples, actualizarEstadoTruequeMultiple, eliminarTruequeMultiple,
     cargarResenas, eliminarResena,

@@ -175,11 +175,11 @@ class TruequeService(TruequeInterface):
             raise BusinessError("Propuesta no encontrada.", status_code=404)
 
         if accion == "ACEPTAR":
-            trueque.estado = "ACEPTADO"
+            trueque.estado = "EN_CURSO"
             trueque.codigo_confirmacion = generar_codigo_confirmacion(self.trueque_repository)
             self.trueque_repository.guardar(trueque)
             self.notificacion_service.actualizar_estado_propuesta(trueque, "ACEPTADA")
-            return "Propuesta aceptada. Confirma la finalización cuando el servicio esté completo."
+            return "Propuesta aceptada. El servicio está en curso."
 
         if accion == "RECHAZAR":
             trueque.estado = "RECHAZADO"
@@ -190,7 +190,10 @@ class TruequeService(TruequeInterface):
         raise BusinessError("Accion invalida.")
 
     def finalizar_trueque(self, usuario, trueque_id):
-        """Confirmacion bilateral antes de transferir el saldo de horas."""
+        """Bloqueado: la finalizacion solo puede hacerse con el codigo alfanumerico.
+
+        El emisor comparte el codigo y el receptor lo ingresa via validar_codigo_finalizacion.
+        """
         with transaction.atomic():
             try:
                 trueque = self.trueque_repository.obtener_bloqueado(trueque_id)
@@ -212,8 +215,8 @@ class TruequeService(TruequeInterface):
                 usuario_id=uid,
                 trueque_id=trueque_id,
                 accion='FINALIZAR_TRUEQUE',
-                resultado=AUTORIZADO if autorizado else BLOQUEADO,
-                motivo=motivo,
+                resultado=BLOQUEADO,
+                motivo="Finalizacion sin codigo no permitida.",
                 tiempo_deteccion_ms=t_deteccion,
                 emisor_id=trueque.emisor_id,
                 receptor_id=trueque.receptor_id,
@@ -222,78 +225,18 @@ class TruequeService(TruequeInterface):
             if not autorizado:
                 raise BusinessError(motivo, status_code=403)
 
-            # Usar funcion de negocio para verificar si puede confirmar
-            puede_conf, mensaje = puede_confirmar(trueque, usuario)
-            if not puede_conf:
-                raise BusinessError(mensaje)
-
+            # La finalizacion solo es posible ingresando el codigo alfanumerico
             if uid == trueque.emisor_id:
-                trueque.emisor_confirmado = True
-            else:
-                trueque.receptor_confirmado = True
-
-            # Usar función de negocio de AcuerdoTrueque para verificar si ambas partes confirmaron
-            if not ambas_partes_confirmaron(trueque):
-                self.trueque_repository.guardar(trueque)
-                return {
-                    "saldo_transferido": False,
-                    "impacto_horas": 0,
-                    "habilitar_resena": False,
-                    "mensaje": "Confirmación registrada. Esperando confirmación de la otra parte.",
-                }
-
-            # Pausar las necesidades de ambos usuarios ya que se cumplieron con el trueque
-            # Pausar todas las publicaciones de tipo NECESIDAD del emisor
-            necesidades_emisor = self.publicacion_repository.listar_por_usuario_y_tipo_activas(trueque.emisor_id, 'NECESIDAD')
-            for pub in necesidades_emisor:
-                self.publicacion_repository.actualizar_estado(pub.id, trueque.emisor_id, False)
-            # Pausar todas las publicaciones de tipo NECESIDAD del receptor
-            necesidades_receptor = self.publicacion_repository.listar_por_usuario_y_tipo_activas(trueque.receptor_id, 'NECESIDAD')
-            for pub in necesidades_receptor:
-                self.publicacion_repository.actualizar_estado(pub.id, trueque.receptor_id, False)
-
-            # Verificar si es intercambio mutuo usando función pura de negocio
-            pub_emisor = self.publicacion_repository.obtener_por_id(trueque.publicacion_emisor_id) if trueque.publicacion_emisor_id else None
-            pub_receptor = self.publicacion_repository.obtener_por_id(trueque.publicacion_receptor_id) if trueque.publicacion_receptor_id else None
-            tipo_emisor = getattr(pub_emisor, 'tipo', None)
-            tipo_receptor = getattr(pub_receptor, 'tipo', None)
-            if es_intercambio_mutuo(tipo_emisor, tipo_receptor):
-                trueque.estado = "FINALIZADO"
-                self.trueque_repository.guardar(trueque)
-                return {
-                    "saldo_transferido": False,
-                    "impacto_horas": 0,
-                    "habilitar_resena": True,
-                    "mensaje": (
-                        "Trueque mutuo finalizado. Intercambio equilibrado sin transferencia "
-                        "de horas. Sistema de reseñas habilitado."
-                    ),
-                }
-
-            prestador_id, receptor_servicio_id = self._identificar_roles_trueque(trueque)
-
-            prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador_id)
-            receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio_id)
-
-            # Usar función de negocio de Usuario para verificar límite de saldo
-            if receptor_servicio.horas_de_vida - 1.0 < -10.0:
                 raise BusinessError(
-                    "El usuario que recibe el servicio excedería el límite de -10 horas.",
+                    "El emisor no puede confirmar. Comparte tu código con el receptor.",
+                    status_code=403,
                 )
 
-            prestador.horas_de_vida += 1.0
-            receptor_servicio.horas_de_vida -= 1.0
-            self.usuario_repository.guardar(prestador)
-            self.usuario_repository.guardar(receptor_servicio)
-
-            trueque.estado = "FINALIZADO"
-            self.trueque_repository.guardar(trueque)
-            return {
-                "saldo_transferido": True,
-                "impacto_horas": 1,
-                "habilitar_resena": True,
-                "mensaje": "Trueque finalizado. Saldos actualizados. Sistema de reseñas habilitado.",
-            }
+            # El receptor tampoco puede usar este endpoint — debe usar validar-codigo
+            raise BusinessError(
+                "Para finalizar el trueque debes ingresar el código alfanumérico.",
+                status_code=400,
+            )
 
     def validar_codigo_finalizacion(self, usuario, trueque_id, codigo):
         """Valida el codigo de confirmacion y finaliza el trueque."""
@@ -353,13 +296,40 @@ class TruequeService(TruequeInterface):
             if es_intercambio_mutuo(tipo_emisor, tipo_receptor):
                 trueque.estado = "FINALIZADO"
                 self.trueque_repository.guardar(trueque)
+
+                # Crear notificaciones de reseña para ambos participantes
+                try:
+                    emisor = self.usuario_repository.obtener_por_id(trueque.emisor_id)
+                    receptor = self.usuario_repository.obtener_por_id(trueque.receptor_id)
+                    
+                    if emisor and receptor:
+                        # Notificación para que el emisor califique al receptor
+                        self.notificacion_service.crear_notificacion_resena(
+                            destinatario=emisor,
+                            remitente=receptor,
+                            trueque=trueque,
+                            mensaje=f"El intercambio mutuo ha finalizado. Deja tu reseña para {receptor.nombre_real}."
+                        )
+                        # Notificación para que el receptor califique al emisor
+                        self.notificacion_service.crear_notificacion_resena(
+                            destinatario=receptor,
+                            remitente=emisor,
+                            trueque=trueque,
+                            mensaje=f"El intercambio mutuo ha finalizado. Deja tu reseña para {emisor.nombre_real}."
+                        )
+                except Exception:
+                    # No fallar la finalización si las notificaciones fallan
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.exception("Error creando notificaciones de reseña para trueque mutuo %s", trueque_id)
+
                 return {
                     "saldo_transferido": False,
                     "impacto_horas": 0,
                     "habilitar_resena": True,
                     "mensaje": (
-                        "Trueque mutuo finalizado. Intercambio equilibrado sin transferencia "
-                        "de horas. Sistema de reseñas habilitado."
+                        "Código validado. Intercambio equilibrado sin transferencia "
+                        "de horas. Ya puedes dejar tu reseña."
                     ),
                 }
 
@@ -367,6 +337,12 @@ class TruequeService(TruequeInterface):
             prestador_id, receptor_servicio_id = self._identificar_roles_trueque(trueque)
             prestador = self.usuario_repository.obtener_por_id_bloqueado(prestador_id)
             receptor_servicio = self.usuario_repository.obtener_por_id_bloqueado(receptor_servicio_id)
+
+            # Verificar límite de saldo antes de transferir
+            if receptor_servicio.horas_de_vida - 1.0 < -10.0:
+                raise BusinessError(
+                    "El usuario que recibe el servicio excedería el límite de -10 horas.",
+                )
 
             # Transferir horas
             prestador.horas_de_vida += 1
@@ -377,9 +353,42 @@ class TruequeService(TruequeInterface):
             trueque.estado = "FINALIZADO"
             self.trueque_repository.guardar(trueque)
 
+            # Crear notificaciones de reseña para ambos participantes
+            try:
+                emisor = self.usuario_repository.obtener_por_id(trueque.emisor_id)
+                receptor = self.usuario_repository.obtener_por_id(trueque.receptor_id)
+                
+                if emisor and receptor:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Creando notificaciones de reseña para trueque {trueque_id}: emisor={emisor.id}, receptor={receptor.id}")
+                    
+                    # Notificación para que el emisor califique al receptor
+                    notif_emisor = self.notificacion_service.crear_notificacion_resena(
+                        destinatario=emisor,
+                        remitente=receptor,
+                        trueque=trueque,
+                        mensaje=f"El trueque ha finalizado. Deja tu reseña para {receptor.nombre_real}."
+                    )
+                    logger.info(f"Notificación creada para emisor {emisor.id}: {notif_emisor.id if notif_emisor else 'None'}")
+                    
+                    # Notificación para que el receptor califique al emisor
+                    notif_receptor = self.notificacion_service.crear_notificacion_resena(
+                        destinatario=receptor,
+                        remitente=emisor,
+                        trueque=trueque,
+                        mensaje=f"El trueque ha finalizado. Deja tu reseña para {emisor.nombre_real}."
+                    )
+                    logger.info(f"Notificación creada para receptor {receptor.id}: {notif_receptor.id if notif_receptor else 'None'}")
+            except Exception:
+                # No fallar la finalización si las notificaciones fallan
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.exception("Error creando notificaciones de reseña para trueque %s", trueque_id)
+
             return {
                 "saldo_transferido": True,
                 "impacto_horas": 1 if uid == prestador_id else -1,
                 "habilitar_resena": True,
-                "mensaje": "Trueque finalizado exitosamente. Sistema de reseñas habilitado.",
+                "mensaje": "Código validado. Saldos actualizados. Ya puedes dejar tu reseña.",
             }

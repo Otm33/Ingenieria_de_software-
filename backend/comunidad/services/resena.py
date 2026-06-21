@@ -4,7 +4,7 @@ from django.db import transaction
 from .base import BusinessError
 from ..interfaces.service_interfaces import ResenaInterface
 from ..repositorios_implementacion import TruequeRepository, ResenaRepository, UsuarioRepository
-from ..negocio.trueque import es_participante, esta_finalizado, contraparte
+from ..negocio.trueque import es_participante, contraparte
 from ..dominio.entidades import ResenaDominio
 from ..negocio.resena import validar as validar_resena
 
@@ -40,8 +40,12 @@ class ResenaService(ResenaInterface):
             if not es_participante(trueque, usuario):
                 raise BusinessError("No eres parte de este trueque.", status_code=403)
 
-            if not esta_finalizado(trueque):
-                raise BusinessError("Solo se pueden dejar reseñas de trueques finalizados.", status_code=400)
+            # Permitir reseñas solo en estado FINALIZADO (código validado)
+            if trueque.estado != 'FINALIZADO':
+                raise BusinessError(
+                    "Solo se pueden dejar reseñas cuando el trueque esté en estado FINALIZADO.",
+                    status_code=400,
+                )
 
             # Verificar si ya existe una reseña de este usuario para este trueque
             if self.resena_repository.existe_resena(trueque.id, usuario.id):
@@ -73,3 +77,4 @@ class ResenaService(ResenaInterface):
             self.resena_repository.crear(trueque.id, usuario.id, calificado.id, estrellas, comentario)
 
         return "Resena registrada correctamente."
+

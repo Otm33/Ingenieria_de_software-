@@ -446,7 +446,8 @@ class ServiciosHU4Tests(HU4TestCase):
         trueque_actualizado = AcuerdoTrueque.objects.get(id=trueque.id)
         self.assertEqual(trueque_actualizado.estado, "EN_CURSO")
 
-    def test_finalizar_una_confirmacion_no_mueve_saldo(self):
+    def test_finalizar_emisor_bloqueado(self):
+        """El emisor no puede usar finalizar_trueque — siempre bloqueado."""
         prestador = crear_usuario("prestador", "prest@test.com", "Prestador", horas=0.0)
         receptor_servicio = crear_usuario(
             "rec_serv", "recs@test.com", "Recibe Servicio", horas=5.0
@@ -460,24 +461,24 @@ class ServiciosHU4Tests(HU4TestCase):
         trueque = crear_trueque(
             prestador,
             receptor_servicio,
-            estado="ACEPTADO",
+            estado="EN_CURSO",
             publicacion_emisor=pub_prestador,
             publicacion_receptor=pub_receptor,
         )
 
-        resultado = self.trueque_service.finalizar_trueque(prestador, trueque.id)
+        with self.assertRaises(BusinessError):
+            self.trueque_service.finalizar_trueque(prestador, trueque.id)
+
         trueque.refresh_from_db()
         prestador.refresh_from_db()
         receptor_servicio.refresh_from_db()
 
-        self.assertFalse(resultado["saldo_transferido"])
-        self.assertTrue(trueque.emisor_confirmado)
-        self.assertFalse(trueque.receptor_confirmado)
-        self.assertEqual(trueque.estado, "ACEPTADO")
+        self.assertEqual(trueque.estado, "EN_CURSO")
         self.assertEqual(prestador.horas_de_vida, 0.0)
         self.assertEqual(receptor_servicio.horas_de_vida, 5.0)
 
-    def test_finalizar_match_mutuo_no_mueve_saldo(self):
+    def test_validar_codigo_match_mutuo_no_mueve_saldo(self):
+        """Al validar código en un trueque mutuo, no se mueven horas y pasa a FINALIZADO."""
         user_a, user_b = self._crear_par_complementario()
         pub_talento_a = Publicacion.objects.get(
             usuario=user_a, tipo="TALENTO", titulo=TITULO_INSTALACION_ELECTRICA
@@ -488,16 +489,16 @@ class ServiciosHU4Tests(HU4TestCase):
         trueque = crear_trueque(
             user_a,
             user_b,
-            estado="ACEPTADO",
+            estado="EN_CURSO",
             publicacion_emisor=pub_talento_a,
             publicacion_receptor=pub_talento_b,
+            codigo_confirmacion="MUT12345",
         )
 
         horas_a_antes = user_a.horas_de_vida
         horas_b_antes = user_b.horas_de_vida
 
-        self.trueque_service.finalizar_trueque(user_a, trueque.id)
-        resultado = self.trueque_service.finalizar_trueque(user_b, trueque.id)
+        resultado = self.trueque_service.validar_codigo_finalizacion(user_b, trueque.id, "MUT12345")
 
         user_a.refresh_from_db()
         user_b.refresh_from_db()
@@ -511,7 +512,8 @@ class ServiciosHU4Tests(HU4TestCase):
         self.assertEqual(user_a.horas_de_vida, horas_a_antes)
         self.assertEqual(user_b.horas_de_vida, horas_b_antes)
 
-    def test_finalizar_doble_confirmacion_mueve_saldo(self):
+    def test_validar_codigo_transfiere_horas(self):
+        """Al validar código correcto, transfiere horas y pasa a FINALIZADO."""
         prestador = crear_usuario("prest2", "prest2@test.com", "Prestador 2", horas=0.0)
         receptor_servicio = crear_usuario(
             "rec_serv2", "recs2@test.com", "Recibe Servicio 2", horas=5.0
@@ -525,13 +527,15 @@ class ServiciosHU4Tests(HU4TestCase):
         trueque = crear_trueque(
             prestador,
             receptor_servicio,
-            estado="ACEPTADO",
+            estado="EN_CURSO",
             publicacion_emisor=pub_prestador,
             publicacion_receptor=pub_receptor,
+            codigo_confirmacion="TST12345",
         )
 
-        self.trueque_service.finalizar_trueque(prestador, trueque.id)
-        resultado = self.trueque_service.finalizar_trueque(receptor_servicio, trueque.id)
+        resultado = self.trueque_service.validar_codigo_finalizacion(
+            receptor_servicio, trueque.id, "TST12345"
+        )
 
         prestador.refresh_from_db()
         receptor_servicio.refresh_from_db()
@@ -543,7 +547,8 @@ class ServiciosHU4Tests(HU4TestCase):
         self.assertEqual(receptor_servicio.horas_de_vida, 4.0)
         self.assertEqual(trueque.estado, "FINALIZADO")
 
-    def test_finalizar_bloqueado_si_excede_limite_menos_10(self):
+    def test_validar_codigo_excede_limite_menos_10(self):
+        """No se puede finalizar si el receptor del servicio excedería -10 horas."""
         prestador = crear_usuario("prest3", "prest3@test.com", "Prestador 3", horas=0.0)
         receptor_servicio = crear_usuario(
             "rec_serv3", "recs3@test.com", "Recibe Servicio 3", horas=-10.0
@@ -557,14 +562,16 @@ class ServiciosHU4Tests(HU4TestCase):
         trueque = crear_trueque(
             prestador,
             receptor_servicio,
-            estado="ACEPTADO",
-            emisor_confirmado=True,
+            estado="EN_CURSO",
             publicacion_emisor=pub_prestador,
             publicacion_receptor=pub_receptor,
+            codigo_confirmacion="LIM12345",
         )
 
         with self.assertRaises(BusinessError):
-            self.trueque_service.finalizar_trueque(receptor_servicio, trueque.id)
+            self.trueque_service.validar_codigo_finalizacion(
+                receptor_servicio, trueque.id, "LIM12345"
+            )
 
     def test_registrar_resena_dos_usuarios_mismo_trueque(self):
         resena_service = ResenaService()

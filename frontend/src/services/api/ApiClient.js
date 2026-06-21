@@ -249,3 +249,12 @@ export default class ApiClient {
     this.cacheTimeout = timeoutMs
   }
 }
+
+/**
+ * Instancia singleton compartida por todos los servicios.
+ * Garantiza que toda la aplicación comparte la misma caché en memoria,
+ * de modo que invalidar en un servicio (ej. ResenaApiService) también
+ * afecta la caché de otro (ej. TruequeApiService).
+ */
+export const sharedApiClient = new ApiClient()
+

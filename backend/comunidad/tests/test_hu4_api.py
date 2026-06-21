@@ -11,6 +11,7 @@ from .helpers import (
     crear_publicacion,
     crear_usuario,
 )
+from ..models import AcuerdoTrueque
 from ..services import MatchmakingService
 
 
@@ -125,7 +126,8 @@ class APIHU4Tests(HU4APITestCase):
         trueque = mis_trueques.data["trueques"][0]
         self.assertEqual(trueque["estado"], "EN_CURSO")
 
-    def test_api_finalizar_primera_confirmacion_200_sin_transferencia(self):
+    def test_api_emisor_no_puede_finalizar(self):
+        """El emisor no puede confirmar la finalización — solo comparte el código."""
         datos = self._crear_par_complementario()
         self.client.force_authenticate(user=datos["user_a"])
         crear = self.client.post(
@@ -146,22 +148,15 @@ class APIHU4Tests(HU4APITestCase):
             format="json",
         )
 
+        # El emisor intenta finalizar — debe ser rechazado
         self.client.force_authenticate(user=datos["user_a"])
         response = self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
 
-        print(response.data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertFalse(response.data["saldo_transferido"])
-        self.assertTrue(response.data["emisor_confirmado"])
-        self.assertFalse(response.data["receptor_confirmado"])
-        self.assertEqual(response.data["estado"], "EN_CURSO")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("emisor", response.data["error"].lower())
 
-        datos["user_a"].refresh_from_db()
-        datos["user_b"].refresh_from_db()
-        self.assertEqual(datos["user_a"].horas_de_vida, 0.0)
-        self.assertEqual(datos["user_b"].horas_de_vida, 5.0)
-
-    def test_api_finalizar_segunda_confirmacion_transfiere(self):
+    def test_api_receptor_finaliza_con_codigo(self):
+        """El receptor finaliza el trueque ingresando el código alfanumérico correcto."""
         datos = self._crear_par_complementario()
         self.client.force_authenticate(user=datos["user_a"])
         crear = self.client.post(
@@ -182,11 +177,18 @@ class APIHU4Tests(HU4APITestCase):
             format="json",
         )
 
-        self.client.force_authenticate(user=datos["user_a"])
-        self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
+        # Obtener el código de confirmación desde la BD
+        trueque_obj = AcuerdoTrueque.objects.get(id=trueque_id)
+        codigo = trueque_obj.codigo_confirmacion
+        self.assertIsNotNone(codigo, "El código de confirmación debe generarse al aceptar.")
 
+        # El receptor valida con el código correcto
         self.client.force_authenticate(user=datos["user_b"])
-        response = self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
+        response = self.client.post(
+            f"/api/trueques/{trueque_id}/validar-codigo/",
+            {"codigo": codigo},
+            format="json",
+        )
 
         print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -198,6 +200,39 @@ class APIHU4Tests(HU4APITestCase):
         datos["user_b"].refresh_from_db()
         self.assertEqual(datos["user_a"].horas_de_vida, 1.0)
         self.assertEqual(datos["user_b"].horas_de_vida, 4.0)
+
+    def test_api_receptor_codigo_incorrecto_400(self):
+        """El receptor no puede finalizar con un código incorrecto."""
+        datos = self._crear_par_complementario()
+        self.client.force_authenticate(user=datos["user_a"])
+        crear = self.client.post(
+            "/api/trueques/propuestas/crear/",
+            {
+                "receptor_id": datos["user_b"].id,
+                "publicacion_emisor_id": datos["pub_talento_a"].id,
+                "publicacion_receptor_id": datos["pub_necesidad_b"].id,
+            },
+            format="json",
+        )
+        trueque_id = crear.data["propuesta_id"]
+
+        self.client.force_authenticate(user=datos["user_b"])
+        self.client.post(
+            f"/api/trueques/{trueque_id}/responder/",
+            {"accion": "ACEPTAR"},
+            format="json",
+        )
+
+        # Intentar con código incorrecto
+        self.client.force_authenticate(user=datos["user_b"])
+        response = self.client.post(
+            f"/api/trueques/{trueque_id}/validar-codigo/",
+            {"codigo": "WRONGCOD"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("incorrecto", response.data["error"].lower())
 
     def test_api_mis_trueques_lista_acuerdos(self):
         datos = self._crear_par_complementario()
@@ -223,6 +258,19 @@ class APIHU4Tests(HU4APITestCase):
         self.assertIn("publicacion_emisor", trueque)
         self.assertIn("puede_confirmar", trueque)
 
+    def _finalizar_trueque_via_codigo(self, datos, trueque_id):
+        """Helper: el receptor finaliza el trueque ingresando el código correcto."""
+        trueque_obj = AcuerdoTrueque.objects.get(id=trueque_id)
+        codigo = trueque_obj.codigo_confirmacion
+        self.client.force_authenticate(user=datos["user_b"])
+        response = self.client.post(
+            f"/api/trueques/{trueque_id}/validar-codigo/",
+            {"codigo": codigo},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response
+
     def test_api_registrar_resena_actualiza_promedio_en_respuesta_perfil(self):
         datos = self._crear_par_complementario()
         self.client.force_authenticate(user=datos["user_a"])
@@ -243,11 +291,11 @@ class APIHU4Tests(HU4APITestCase):
             {"accion": "ACEPTAR"},
             format="json",
         )
-        self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
+
+        # Finalizar via código (receptor ingresa el código)
+        self._finalizar_trueque_via_codigo(datos, trueque_id)
 
         self.client.force_authenticate(user=datos["user_a"])
-        self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
-
         self.client.post(
             "/api/resenas/",
             {"trueque_id": trueque_id, "estrellas": 4, "comentario": "Muy buen trabajo."},
@@ -287,11 +335,11 @@ class APIHU4Tests(HU4APITestCase):
             {"accion": "ACEPTAR"},
             format="json",
         )
-        self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
+
+        # Finalizar via código (receptor ingresa el código)
+        self._finalizar_trueque_via_codigo(datos, trueque_id)
 
         self.client.force_authenticate(user=datos["user_a"])
-        self.client.post(f"/api/trueques/{trueque_id}/finalizar/")
-
         self.client.post(
             "/api/resenas/",
             {"trueque_id": trueque_id, "estrellas": 4, "comentario": "Muy buen trabajo."},

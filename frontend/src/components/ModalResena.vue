@@ -10,8 +10,8 @@
           Califica tu experiencia con <strong>{{ contraparteNombre }}</strong>
         </p>
 
-        <p v-if="estadoTrueque && estadoTrueque !== 'FINALIZADO'" class="alert alert--error">
-          Solo puedes dejar reseña cuando el trueque esté <strong>FINALIZADO</strong>.
+        <p v-if="estadoTrueque && !['ACEPTADO', 'FINALIZADO'].includes(estadoTrueque)" class="alert alert--error">
+          Solo puedes dejar reseña cuando el trueque esté <strong>ACEPTADO</strong> o <strong>FINALIZADO</strong>.
           Estado actual: {{ estadoTrueque }}.
         </p>
 
@@ -43,7 +43,7 @@
           <button
             class="button button--primary"
             type="submit"
-            :disabled="enviando || (estadoTrueque && estadoTrueque !== 'FINALIZADO')"
+            :disabled="enviando || (estadoTrueque && !['ACEPTADO', 'FINALIZADO'].includes(estadoTrueque))"
           >
             {{ enviando ? 'Enviando...' : 'Enviar reseña' }}
           </button>
@@ -100,8 +100,8 @@ const enviar = async () => {
     return
   }
 
-  if (props.estadoTrueque && props.estadoTrueque !== 'FINALIZADO') {
-    error.value = 'Solo puedes dejar reseña de trueques finalizados.'
+  if (props.estadoTrueque && !['ACEPTADO', 'FINALIZADO'].includes(props.estadoTrueque)) {
+    error.value = 'Solo puedes dejar reseña de trueques en estado ACEPTADO o FINALIZADO.'
     return
   }
 

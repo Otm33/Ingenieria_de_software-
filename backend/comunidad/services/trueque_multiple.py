@@ -424,6 +424,49 @@ class TruequeMultipleService:
             if todos_pares_confirmaron(trueque):
                 trueque.estado = 'FINALIZADO'
                 self.repository.guardar(trueque)
+                
+                # Crear notificaciones de reseña para todos los participantes
+                try:
+                    # Obtener todos los participantes únicos
+                    participantes_unicos = set([
+                        trueque.emisor1_id, trueque.receptor1_id,
+                        trueque.emisor2_id, trueque.receptor2_id,
+                        trueque.emisor3_id, trueque.receptor3_id,
+                    ])
+                    
+                    # Para cada par, crear notificaciones cruzadas de reseña
+                    pares = [
+                        (trueque.emisor1_id, trueque.receptor1_id),
+                        (trueque.emisor2_id, trueque.receptor2_id),
+                        (trueque.emisor3_id, trueque.receptor3_id),
+                    ]
+                    
+                    for emisor_id, receptor_id in pares:
+                        if emisor_id == receptor_id:
+                            continue  # Skip si es el mismo usuario
+                        emisor = self.usuario_repository.obtener_por_id(emisor_id)
+                        receptor = self.usuario_repository.obtener_por_id(receptor_id)
+                        
+                        if emisor and receptor:
+                            # Notificación para que el emisor califique al receptor
+                            self.notificacion_service.crear_notificacion_resena(
+                                destinatario=emisor,
+                                remitente=receptor,
+                                trueque_multiple=trueque,
+                                mensaje=f"El trueque múltiple ha finalizado. Deja tu reseña para {receptor.nombre_real}."
+                            )
+                            # Notificación para que el receptor califique al emisor
+                            self.notificacion_service.crear_notificacion_resena(
+                                destinatario=receptor,
+                                remitente=emisor,
+                                trueque_multiple=trueque,
+                                mensaje=f"El trueque múltiple ha finalizado. Deja tu reseña para {emisor.nombre_real}."
+                            )
+                except Exception:
+                    # No fallar la finalización si las notificaciones fallan
+                    logger = logging.getLogger(__name__)
+                    logger.exception("Error creando notificaciones de reseña para trueque múltiple %s", trueque_id)
+                
                 return "Todos los pares han confirmado. El trueque múltiple ha sido finalizado. Ahora puedes dejar reseñas."
             
             self.repository.guardar(trueque)

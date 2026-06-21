@@ -41,6 +41,12 @@ class AdminPanelController:
     def eliminar_usuario(self, request, usuario_id):
         return self.service.eliminar_usuario(request.user, usuario_id)
 
+    def editar_usuario(self, request, usuario_id):
+        import json
+        body = json.loads(request.body)
+        usuario = self.service.editar_usuario(request.user, usuario_id, body)
+        return {'usuario': self._serializar_usuario(usuario)}
+
     # ── Publicaciones ─────────────────────────────────────────────────────────
 
     def listar_publicaciones(self, request):
@@ -66,6 +72,12 @@ class AdminPanelController:
 
     def eliminar_publicacion(self, request, publicacion_id):
         return self.service.eliminar_publicacion(request.user, publicacion_id)
+
+    def editar_publicacion(self, request, publicacion_id):
+        import json
+        body = json.loads(request.body)
+        publicacion = self.service.editar_publicacion(request.user, publicacion_id, body)
+        return {'publicacion': self._serializar_publicacion(publicacion)}
 
     # ── Trueques ──────────────────────────────────────────────────────────────
 
@@ -159,6 +171,7 @@ class AdminPanelController:
             'is_superuser': u.is_superuser,
             'promedio_estrellas': u.promedio_estrellas,
             'estado_social': getattr(u, 'estado_social', 'NINGUNO'),
+            'date_joined': u.date_joined.isoformat() if getattr(u, 'date_joined', None) else None,
         }
 
     def _serializar_publicacion(self, p):
@@ -176,13 +189,29 @@ class AdminPanelController:
         }
 
     def _serializar_trueque(self, t):
+        from backend.comunidad.models import Usuario
+        emisor_nombre = ''
+        receptor_nombre = ''
+        try:
+            emisor_nombre = Usuario.objects.get(id=t.emisor_id).nombre_real or ''
+        except Exception:
+            pass
+        try:
+            receptor_nombre = Usuario.objects.get(id=t.receptor_id).nombre_real or ''
+        except Exception:
+            pass
         return {
             'id': t.id,
             'emisor_id': t.emisor_id,
+            'emisor_nombre': emisor_nombre,
             'receptor_id': t.receptor_id,
+            'receptor_nombre': receptor_nombre,
             'estado': t.estado,
             'publicacion_emisor_id': t.publicacion_emisor_id,
             'publicacion_receptor_id': t.publicacion_receptor_id,
+            'publicacion_emisor_titulo': getattr(t, 'publicacion_emisor_titulo', None),
+            'publicacion_receptor_titulo': getattr(t, 'publicacion_receptor_titulo', None),
+            'codigo_confirmacion': t.codigo_confirmacion,
             'emisor_confirmado': t.emisor_confirmado,
             'receptor_confirmado': t.receptor_confirmado,
         }

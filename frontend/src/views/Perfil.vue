@@ -503,7 +503,7 @@
                   <p v-if="mensajeEspera(trueque)" class="trueque-espera">
                     {{ mensajeEspera(trueque) }}
                   </p>
-                  <div v-if="trueque.estado === 'ACEPTADO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
+                  <div v-if="trueque.estado === 'EN_CURSO' && trueque.codigo_confirmacion" class="codigo-confirmacion">
                     <div v-if="Number(trueque.emisor) === Number(datosPerfil?.usuario?.id)" class="codigo-emisor">
                       <span class="codigo-label">Código de confirmación:</span>
                       <span class="codigo-valor">{{ trueque.codigo_confirmacion }}</span>
@@ -555,15 +555,7 @@
                     >
                       {{ etiquetaPropuestaPendiente(trueque) }}
                     </button>
-                    <button
-                      v-if="trueque.puede_confirmar"
-                      class="button button--primary button--small"
-                      type="button"
-                      :disabled="procesandoTruequeId === trueque.id"
-                      @click="confirmarFinalizacion(trueque)"
-                    >
-                      Confirmar finalización
-                    </button>
+
                     <button
                       v-if="trueque.pendiente_resena"
                       class="button button--secondary button--small"
@@ -747,6 +739,7 @@ const formatearImpacto = (impacto) => {
 const claseEstado = (estado) => {
   const mapa = {
     ACEPTADO: 'trueque-card__estado--aceptado',
+    EN_CURSO: 'trueque-card__estado--en-curso',
     FINALIZADO: 'trueque-card__estado--finalizado',
     RECHAZADO: 'trueque-card__estado--rechazado',
     PENDIENTE: 'trueque-card__estado--pendiente',
@@ -755,7 +748,7 @@ const claseEstado = (estado) => {
 }
 
 const mensajeEspera = (trueque) => {
-  if (trueque.estado !== 'ACEPTADO') return ''
+  if (trueque.estado !== 'EN_CURSO') return ''
   if (trueque.emisor === usuarioActualId.value && trueque.emisor_confirmado && !trueque.receptor_confirmado) {
     return `Esperando confirmación de ${trueque.receptor_nombre}`
   }
@@ -813,18 +806,24 @@ const validarCodigo = async (trueque) => {
     feedbackTrueque[trueque.id] = resultado.message || 'Código validado correctamente.'
     codigoIngresado.value = ''
     mostrandoInputCodigo.value = null
+
+    // Forzar recarga de datos desde el servidor (sin caché)
     await cargarPerfil()
     await cargarMisTrueques()
 
-    if (resultado.habilitar_resena) {
+    // Abrir modal de reseña directamente si el backend indica que está habilitado
+    if (resultado.habilitar_resena && hu4?.abrirModalResenaPrioritario) {
       const truequeActualizado = misTrueques.value.find((item) => item.id === trueque.id)
-      if (truequeActualizado?.pendiente_resena && hu4?.abrirModalResenaPrioritario) {
+      if (truequeActualizado) {
         hu4.abrirModalResenaPrioritario(truequeActualizado)
       }
     }
 
     if (hu4?.refrescarDatosHu4) {
-      await hu4.refrescarDatosHu4({ omitirModalesAutomaticos: resultado.habilitar_resena })
+      await hu4.refrescarDatosHu4({
+        omitirModalesAutomaticos: resultado.habilitar_resena,
+        omitirResenas: resultado.habilitar_resena,
+      })
     }
   } catch (err) {
     feedbackTrueque[trueque.id] = err.message || 'Código inválido.'

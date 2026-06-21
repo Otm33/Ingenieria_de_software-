@@ -109,6 +109,24 @@ class AdminPanelService(AdminPanelInterface):
         self.usuario_repo.eliminar(usuario_id)
         return {'eliminado': True}
 
+    def editar_usuario(self, admin, usuario_id, datos):
+        validar_es_administrador(admin)
+        from backend.comunidad.models import Usuario as UsuarioORM
+        try:
+            usuario = UsuarioORM.objects.get(id=usuario_id)
+        except UsuarioORM.DoesNotExist:
+            raise ValueError('Usuario no encontrado.')
+        if 'nombre_real' in datos:
+            usuario.nombre_real = datos['nombre_real']
+        if 'email' in datos:
+            usuario.email = datos['email']
+        if 'horas_de_vida' in datos:
+            usuario.horas_de_vida = datos['horas_de_vida']
+        if 'es_comercio' in datos:
+            usuario.es_comercio = datos['es_comercio']
+        usuario.save()
+        return usuario
+
     # ── Publicaciones ─────────────────────────────────────────────────────────
 
     def listar_publicaciones(self, admin, busqueda=None):
@@ -144,6 +162,29 @@ class AdminPanelService(AdminPanelInterface):
             raise ValueError('Publicacion no encontrada.')
         self.publicacion_repo.eliminar(publicacion_id)
         return {'eliminado': True}
+
+    def editar_publicacion(self, admin, publicacion_id, datos):
+        validar_es_administrador(admin)
+        from backend.comunidad.models import Publicacion as PublicacionORM
+        try:
+            pub = PublicacionORM.objects.get(id=publicacion_id)
+        except PublicacionORM.DoesNotExist:
+            raise ValueError('Publicacion no encontrada.')
+        if 'titulo' in datos:
+            pub.titulo = datos['titulo']
+        if 'descripcion' in datos:
+            pub.descripcion = datos['descripcion']
+        if 'categoria' in datos:
+            pub.categoria = datos['categoria']
+        if 'tipo' in datos:
+            pub.tipo = datos['tipo']
+        if 'urgencia' in datos:
+            pub.urgencia = datos['urgencia']
+        pub.save()
+        # Return with usuario_username and usuario_nombre_real for serialization
+        pub.usuario_username = pub.usuario.username if pub.usuario else ''
+        pub.usuario_nombre_real = pub.usuario.nombre_real if pub.usuario else ''
+        return pub
 
     # ── Trueques ──────────────────────────────────────────────────────────────
 

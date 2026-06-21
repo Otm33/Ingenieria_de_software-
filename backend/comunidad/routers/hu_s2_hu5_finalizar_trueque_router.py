@@ -11,13 +11,14 @@ from ..controladores.hu_s2_hu5_finalizar_trueque_controller import FinalizarTrue
 from ..dto.request_models import ValidarCodigoRequest
 from ..repositorios_implementacion import TruequeRepository
 from ..services import TruequeService
+from ..services.notificacion import NotificacionService
 from ..services.base import BusinessError
 from ..utils import CsrfExemptSessionAuthentication
 
 
 def _controlador():
     return FinalizarTruequeController(
-        trueque_service=TruequeService(),
+        trueque_service=TruequeService(notificacion_service=NotificacionService()),
         trueque_repository=TruequeRepository(),
     )
 
