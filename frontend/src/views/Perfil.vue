@@ -34,11 +34,18 @@
                 <div class="estadistica-label">Calificación</div>
               </div>
             </div>
-            <div class="estadistica-card">
+            <div class="estadistica-card" v-if="!datosPerfil.usuario.es_comercio">
               <div class="estadistica-icon">HORAS</div>
               <div class="estadistica-info">
                 <div class="estadistica-valor">{{ datosPerfil.usuario.horas_de_vida.toFixed(1) }}</div>
                 <div class="estadistica-label">Horas de Vida</div>
+              </div>
+            </div>
+            <div class="estadistica-card">
+              <div class="estadistica-icon">SALDO</div>
+              <div class="estadistica-info">
+                <div class="estadistica-valor">{{ datosPerfil.usuario.saldo_comercial ? Number(datosPerfil.usuario.saldo_comercial).toFixed(2) : '0.00' }}</div>
+                <div class="estadistica-label">Saldo Comercial</div>
               </div>
             </div>
           </div>

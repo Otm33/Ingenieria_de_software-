@@ -139,6 +139,9 @@ class AcuerdoTruequeMultipleDominio:
     par1_confirmado: bool = False
     par2_confirmado: bool = False
     par3_confirmado: bool = False
+    codigo_par1: Optional[str] = None
+    codigo_par2: Optional[str] = None
+    codigo_par3: Optional[str] = None
     fecha_creacion: Optional[datetime] = None
 
 

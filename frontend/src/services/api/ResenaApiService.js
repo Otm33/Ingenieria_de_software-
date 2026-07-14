@@ -7,7 +7,7 @@ import ApiClient, { sharedApiClient } from './ApiClient.js'
 export default class ResenaRepository {
   constructor(apiClient = null) {
     this.apiClient = apiClient || sharedApiClient
-    
+
     // Claves de caché
     this.cacheKeys = {
       notificaciones: 'notificaciones',
@@ -23,12 +23,12 @@ export default class ResenaRepository {
       estrellas,
       comentario,
     })
-    
+
     // Invalidar caché de notificaciones Y de mis-trueques
     // (mis-trueques contiene el campo pendiente_resena que cambia al registrar reseña)
     this.apiClient.invalidate(this.cacheKeys.notificaciones)
     this.apiClient.invalidate('trueques:mis')
-    
+
     return result
   }
 
@@ -46,7 +46,7 @@ export default class ResenaRepository {
         forceRefresh,
       }
     )
-    
+
     const notificaciones = (data.notificaciones || []).map((notificacion) => ({
       ...notificacion,
       match_detalle: this._normalizarMatchDetalle(notificacion.match_detalle),
@@ -66,10 +66,10 @@ export default class ResenaRepository {
       notificacion_id: notificacionId,
       accion: 'marcar_leida',
     })
-    
+
     // Invalidar caché de notificaciones
     this.apiClient.invalidate(this.cacheKeys.notificaciones)
-    
+
     return result
   }
 
@@ -81,10 +81,10 @@ export default class ResenaRepository {
       trueque_id: truequeId,
       accion: 'marcar_leidas_trueque',
     })
-    
+
     // Invalidar caché de notificaciones
     this.apiClient.invalidate(this.cacheKeys.notificaciones)
-    
+
     return result
   }
 
@@ -93,8 +93,13 @@ export default class ResenaRepository {
    * @private
    */
   _normalizarMatchDetalle(matchDetalle) {
-    if (!Array.isArray(matchDetalle) || !matchDetalle.length) {
+    if (!matchDetalle) {
       return null
+    }
+
+    if (!Array.isArray(matchDetalle)) {
+      // Es un objeto (ej. trueque múltiple), retornarlo tal cual
+      return matchDetalle
     }
 
     return matchDetalle.map((entrada) => ({

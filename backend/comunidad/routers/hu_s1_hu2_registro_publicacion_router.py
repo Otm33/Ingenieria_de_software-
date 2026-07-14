@@ -169,6 +169,16 @@ class RegistroRouter(APIView):
                 es_comercio=request.data.get("es_comercio", False),
             )
             resultado = _controlador().registrar_usuario(req_data)
+            
+            # Autenticar automáticamente al usuario después del registro
+            from ..models import Usuario as UsuarioORM
+            usuario_orm = UsuarioORM.objects.get(username=req_data.username)
+            usuario = authenticate(request, username=usuario_orm.username, password=req_data.password)
+            if usuario:
+                login(request, usuario)
+                resultado["autenticado"] = True
+                resultado["usuario"] = _controlador().construir_respuesta_usuario(usuario)
+            
             return Response(resultado, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -186,6 +196,11 @@ class CrearPublicacionRouter(APIView):
 
     def post(self, request):
         try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"CrearPublicacionRouter - request.user: {request.user}, authenticated: {request.user.is_authenticated}, id: {request.user.id}")
+            logger.warning(f"CrearPublicacionRouter - request.data: {request.data}")
+            
             req_data = CrearPublicacionRequest(
                 tipo=request.data.get("tipo", ""),
                 titulo=request.data.get("titulo", ""),
@@ -193,7 +208,10 @@ class CrearPublicacionRouter(APIView):
                 categoria=request.data.get("categoria", ""),
                 urgencia=request.data.get("urgencia", "NORMAL"),
             )
+            logger.warning(f"CrearPublicacionRouter - req_data: tipo={req_data.tipo}, titulo={req_data.titulo}")
+            
             resultado = _controlador().crear_publicacion(request.user.id, req_data)
+            logger.warning(f"CrearPublicacionRouter - resultado: {resultado}")
             return Response(resultado, status=status.HTTP_201_CREATED)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

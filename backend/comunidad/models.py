@@ -113,7 +113,7 @@ class NotificacionPropuesta(models.Model):
     destinatario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_recibidas')
     remitente = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='notificaciones_enviadas')
     trueque = models.ForeignKey(AcuerdoTrueque, on_delete=models.CASCADE, related_name='notificaciones', null=True, blank=True)
-    publicacion_original = models.ForeignKey(Publicacion, on_delete=models.CASCADE, related_name='notificaciones')
+    publicacion_original = models.ForeignKey(Publicacion, on_delete=models.CASCADE, related_name='notificaciones', null=True, blank=True)
     trueque_multiple = models.ForeignKey('AcuerdoTruequeMultiple', on_delete=models.CASCADE, related_name='notificaciones_multiple', null=True, blank=True)
     mensaje = models.TextField(max_length=300)
     match_detalle = models.JSONField(null=True, blank=True)

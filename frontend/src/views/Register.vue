@@ -101,28 +101,30 @@
               />
             </div>
 
-            <div class="form-group form-group--full">
-              <label for="categoria">Categoria del primer talento</label>
-              <select id="categoria" v-model="form.categoria" class="select" required>
-                <option value="">Selecciona una categoria</option>
-                <option v-for="categoria in CATEGORIAS" :key="categoria" :value="categoria">
-                  {{ categoria }}
-                </option>
-              </select>
-            </div>
+            <template v-if="!esComercio">
+              <div class="form-group form-group--full">
+                <label for="categoria">Categoria del primer talento</label>
+                <select id="categoria" v-model="form.categoria" class="select" required>
+                  <option value="">Selecciona una categoria</option>
+                  <option v-for="categoria in CATEGORIAS" :key="categoria" :value="categoria">
+                    {{ categoria }}
+                  </option>
+                </select>
+              </div>
 
-            <div class="form-group form-group--full">
-              <label for="titulo">Titulo del talento</label>
-              <select id="titulo" v-model="form.titulo" class="select" required :disabled="!form.categoria">
-                <option value="">Selecciona un titulo</option>
-                <option v-for="titulo in titulosDisponibles" :key="titulo" :value="titulo">
-                  {{ titulo }}
-                </option>
-              </select>
-            </div>
+              <div class="form-group form-group--full">
+                <label for="titulo">Titulo del talento</label>
+                <select id="titulo" v-model="form.titulo" class="select" required :disabled="!form.categoria">
+                  <option value="">Selecciona un titulo</option>
+                  <option v-for="titulo in titulosDisponibles" :key="titulo" :value="titulo">
+                    {{ titulo }}
+                  </option>
+                </select>
+              </div>
+            </template>
           </div>
 
-          <div class="form-group form-group--full">
+          <div v-if="!esComercio" class="form-group form-group--full">
             <label for="descripcion">Descripcion del talento</label>
             <textarea
               id="descripcion"
@@ -207,7 +209,7 @@ const titulosDisponibles = computed(() => titulosParaCategoria(form.value.catego
 const tituloPaso = computed(() => {
   if (pasoActual.value === 1) return 'Paso 1 — Validar correo';
   if (pasoActual.value === 2) return 'Paso 2 — Credenciales';
-  return props.esComercio ? 'Paso 3 — Perfil del comercio y primer servicio' : 'Paso 3 — Perfil inicial y primer talento';
+  return props.esComercio ? 'Paso 3 — Perfil del comercio' : 'Paso 3 — Perfil inicial y primer talento';
 });
 
 const textoBotonPrincipal = computed(() => {
@@ -278,7 +280,7 @@ const ejecutarRegistroCompleto = async () => {
   registroExitoso.value = false;
 
   try {
-    await authStore.registrarUsuario({
+    const resultado = await authStore.registrarUsuario({
       nombre_real: form.value.nombre_real,
       email: form.value.email,
       username: form.value.username,
@@ -287,18 +289,21 @@ const ejecutarRegistroCompleto = async () => {
       es_comercio: props.esComercio,
     });
 
-    await authStore.iniciarSesion({
-      username: form.value.username,
-      password: form.value.password,
-    });
+    // El backend ahora hace login automático, actualizamos el estado si viene autenticado
+    if (resultado.autenticado && resultado.usuario) {
+      authStore.usuarioActual = resultado.usuario;
+      authStore.estaAutenticado = true;
+    }
 
-    await carteleraStore.crearPublicacion({
-      tipo: 'TALENTO',
-      titulo: form.value.titulo,
-      descripcion: form.value.descripcion,
-      categoria: form.value.categoria,
-      urgencia: 'NORMAL',
-    });
+    if (!props.esComercio) {
+      await carteleraStore.crearPublicacion(authStore, {
+        tipo: 'TALENTO',
+        titulo: form.value.titulo,
+        descripcion: form.value.descripcion,
+        categoria: form.value.categoria,
+        urgencia: 'NORMAL',
+      });
+    }
 
     registroExitoso.value = true;
     feedback.value = props.esComercio

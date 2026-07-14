@@ -43,16 +43,27 @@ class TruequeMultipleController:
     def listar_mis_trueques_multiples(self, usuario_orm, request=None) -> dict:
         logger.info(f"Listando trueques múltiples para usuario {usuario_orm.id}")
 
-        trueques = self._service.listar_por_usuario(usuario_orm)
+        from backend.comunidad.models import AcuerdoTruequeMultiple as TMORM
+        from backend.comunidad.serializers import AcuerdoTruequeMultipleSerializer
+        from django.db.models import Q
 
-        data = [
-            {
-                "id": t.id,
-                "estado": t.estado,
-                "fecha_creacion": t.fecha_creacion.isoformat() if t.fecha_creacion else None,
-            }
-            for t in trueques
-        ]
+        uid = usuario_orm.id
+        qs = TMORM.objects.filter(
+            Q(emisor1_id=uid) | Q(receptor1_id=uid) |
+            Q(emisor2_id=uid) | Q(receptor2_id=uid) |
+            Q(emisor3_id=uid) | Q(receptor3_id=uid)
+        ).select_related(
+            'emisor1', 'receptor1', 'emisor2', 'receptor2', 'emisor3', 'receptor3',
+            'publicacion_emisor1', 'publicacion_emisor1__usuario',
+            'publicacion_receptor1', 'publicacion_receptor1__usuario',
+            'publicacion_emisor2', 'publicacion_emisor2__usuario',
+            'publicacion_receptor2', 'publicacion_receptor2__usuario',
+            'publicacion_emisor3', 'publicacion_emisor3__usuario',
+            'publicacion_receptor3', 'publicacion_receptor3__usuario',
+        )
+
+        serializer_context = {'request': request} if request else {}
+        data = AcuerdoTruequeMultipleSerializer(qs, many=True, context=serializer_context).data
 
         return {
             "trueques_multiple": data,

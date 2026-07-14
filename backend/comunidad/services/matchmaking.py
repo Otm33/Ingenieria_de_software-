@@ -207,6 +207,12 @@ class MatchmakingService(MatchmakingInterface):
                 if sugerencia:
                     pub_emisor = self.publicacion_repository.obtener_por_id(sugerencia.get("mi_pub_id"))
                     pub_receptor = self.publicacion_repository.obtener_por_id(sugerencia.get("su_pub_id"))
+                else:
+                    # Es un match no mutuo, usar la publicación que provocó la coincidencia
+                    if match.get("talentos_coincidentes"):
+                        pub_receptor = match["talentos_coincidentes"][0]
+                    elif match.get("necesidades_coincidentes"):
+                        pub_receptor = match["necesidades_coincidentes"][0]
 
             trueque = self.trueque_repository.obtener_o_crear_pendiente(
                 emisor_id=usuario.id,

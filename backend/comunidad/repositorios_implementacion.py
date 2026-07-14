@@ -811,6 +811,9 @@ class TruequeMultipleRepository:
             par1_confirmado=modelo.par1_confirmado,
             par2_confirmado=modelo.par2_confirmado,
             par3_confirmado=modelo.par3_confirmado,
+            codigo_par1=getattr(modelo, 'codigo_par1', None),
+            codigo_par2=getattr(modelo, 'codigo_par2', None),
+            codigo_par3=getattr(modelo, 'codigo_par3', None),
             fecha_creacion=getattr(modelo, 'fecha_creacion', None),
         )
 
@@ -878,6 +881,9 @@ class TruequeMultipleRepository:
         modelo.par1_confirmado = trueque_multiple_dominio.par1_confirmado
         modelo.par2_confirmado = trueque_multiple_dominio.par2_confirmado
         modelo.par3_confirmado = trueque_multiple_dominio.par3_confirmado
+        modelo.codigo_par1 = getattr(trueque_multiple_dominio, 'codigo_par1', None)
+        modelo.codigo_par2 = getattr(trueque_multiple_dominio, 'codigo_par2', None)
+        modelo.codigo_par3 = getattr(trueque_multiple_dominio, 'codigo_par3', None)
         modelo.save()
         return trueque_multiple_dominio
 

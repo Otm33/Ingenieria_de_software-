@@ -122,6 +122,8 @@ class AdminPanelService(AdminPanelInterface):
             usuario.email = datos['email']
         if 'horas_de_vida' in datos:
             usuario.horas_de_vida = datos['horas_de_vida']
+        if 'saldo_comercial' in datos:
+            usuario.saldo_comercial = datos['saldo_comercial']
         if 'es_comercio' in datos:
             usuario.es_comercio = datos['es_comercio']
         usuario.save()

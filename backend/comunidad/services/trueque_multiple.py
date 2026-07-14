@@ -226,6 +226,7 @@ class TruequeMultipleService:
         }
 
         remitente = usuario_origen or ciclo['emisor1']
+        match_detalle['trueque_multiple'] = trueque_multiple.id
 
         # Crear notificaciones usando el servicio de notificaciones
         try:
@@ -236,7 +237,7 @@ class TruequeMultipleService:
                 trueque=None,
                 publicacion_original=ciclo.get('publicacion_emisor1'),
                 mensaje=mensajes[ciclo['emisor1'].id],
-                match_detalle={"trueque_multiple": trueque_multiple.id, "key": ciclo.get('key')},
+                match_detalle=match_detalle,
             )
             # emisor2
             self.notificacion_service.crear_notificacion_propuesta(
@@ -245,7 +246,7 @@ class TruequeMultipleService:
                 trueque=None,
                 publicacion_original=ciclo.get('publicacion_emisor2'),
                 mensaje=mensajes[ciclo['emisor2'].id],
-                match_detalle={"trueque_multiple": trueque_multiple.id, "key": ciclo.get('key')},
+                match_detalle=match_detalle,
             )
             # emisor3
             self.notificacion_service.crear_notificacion_propuesta(
@@ -254,7 +255,7 @@ class TruequeMultipleService:
                 trueque=None,
                 publicacion_original=ciclo.get('publicacion_emisor3'),
                 mensaje=mensajes[ciclo['emisor3'].id],
-                match_detalle={"trueque_multiple": trueque_multiple.id, "key": ciclo.get('key')},
+                match_detalle=match_detalle,
             )
         except Exception:
             # No hacer fallar la creación del trueque si las notificaciones fallan

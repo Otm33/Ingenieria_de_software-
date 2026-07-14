@@ -14,6 +14,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
             "email",
             "nombre_real",
             "horas_de_vida",
+            "saldo_comercial",
             "promedio_estrellas",
             "es_comercio",
             "is_staff",
@@ -223,10 +224,10 @@ class NotificacionSerializer(serializers.ModelSerializer):
     remitente_nombre = serializers.CharField(source="remitente.nombre_real", read_only=True)
     remitente_username = serializers.CharField(source="remitente.username", read_only=True)
     remitente_id = serializers.IntegerField(source="remitente.id", read_only=True)
-    trueque_id = serializers.IntegerField(source="trueque.id", read_only=True)
-    trueque_multiple_id = serializers.IntegerField(source="trueque_multiple.id", read_only=True)
-    publicacion_titulo = serializers.CharField(source="publicacion_original.titulo", read_only=True)
-    publicacion_tipo = serializers.CharField(source="publicacion_original.tipo", read_only=True)
+    trueque_id = serializers.SerializerMethodField()
+    trueque_multiple_id = serializers.SerializerMethodField()
+    publicacion_titulo = serializers.SerializerMethodField()
+    publicacion_tipo = serializers.SerializerMethodField()
     acciones = serializers.SerializerMethodField()
 
     class Meta:
@@ -258,6 +259,18 @@ class NotificacionSerializer(serializers.ModelSerializer):
         if obj.tipo == "RESENA" and obj.estado == "PENDIENTE":
             acciones.append("dejar_resena")
         return acciones
+
+    def get_trueque_id(self, obj):
+        return obj.trueque_id
+
+    def get_trueque_multiple_id(self, obj):
+        return obj.trueque_multiple_id
+
+    def get_publicacion_titulo(self, obj):
+        return obj.publicacion_original.titulo if obj.publicacion_original else None
+
+    def get_publicacion_tipo(self, obj):
+        return obj.publicacion_original.tipo if obj.publicacion_original else None
 
 
 class ResenaSerializer(serializers.ModelSerializer):
@@ -347,20 +360,15 @@ class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
         ]
     
     def get_puede_aceptar(self, obj):
+        from .negocio.trueque_multiple import es_participante, obtener_rol
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        if not obj.participante(request.user):
+        if not es_participante(obj, request.user):
             return False
-        # Permitimos aceptar también si el trueque ya está en 'ACEPTADO' pero
-        # aún hay participantes que no han marcado su aceptación (caso raro
-        # consistente con correcciones retroactivas).
         if obj.estado not in ('PENDIENTE', 'ACEPTADO'):
             return False
-        # Determinar el rol del usuario preferentemente por su posición de emisor
-        # (cada emisor representa un participante único). Si el flag del rol
-        # aún no está marcado, puede aceptar.
-        rol = obj.obtener_usuario_por_rol(request.user)
+        rol = obtener_rol(obj, request.user)
         if rol == 1 and not obj.usuario1_aceptado:
             return True
         if rol == 2 and not obj.usuario2_aceptado:
@@ -370,31 +378,32 @@ class AcuerdoTruequeMultipleSerializer(serializers.ModelSerializer):
         return False
     
     def get_todos_aceptaron(self, obj):
-        return obj.todos_aceptaron()
+        from .negocio.trueque_multiple import todos_aceptaron
+        return todos_aceptaron(obj)
     
     def get_esta_expirado(self, obj):
-        return obj.esta_expirado()
+        from .negocio.trueque_multiple import esta_expirado
+        return esta_expirado(obj)
     
     def get_todos_pares_confirmaron(self, obj):
-        return obj.todos_pares_confirmaron()
+        from .negocio.trueque_multiple import todos_pares_confirmaron
+        return todos_pares_confirmaron(obj)
     
     def get_pendiente_resena(self, obj):
-        from backend.comunidad.models import ResenaMultiple
-        from ..negocio.trueque_multiple import obtener_pares_del_usuario
+        from .negocio.trueque_multiple import es_participante, obtener_pares_del_usuario
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        # Reseñas pendientes en FINALIZADO
         if obj.estado != 'FINALIZADO':
             return False
-        # Verificar si el usuario es participante
-        if not obj.participante(request.user):
+        if not es_participante(obj, request.user):
             return False
         
         # Obtener los pares en los que participa el usuario
         pares_usuario = obtener_pares_del_usuario(obj, request.user)
         
         # Para cada par, verificar si el usuario ya calificó a su contraparte
+        from backend.comunidad.models import ResenaMultiple
         for par in pares_usuario:
             # Obtener contraparte del usuario en este par
             contraparte_id = None

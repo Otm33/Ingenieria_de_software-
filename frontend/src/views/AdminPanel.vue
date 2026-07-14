@@ -62,13 +62,13 @@
     <!-- Loading -->
     <div v-if="store.loading" class="loading-state">Cargando datos...</div>
 
-    <!-- ═══════ Tabla Usuarios ═══════ -->
-    <section v-if="seccionActiva === 'usuarios' && !store.loading" class="panel">
+    <!-- ═══════ Tabla Usuarios y Comercios ═══════ -->
+    <section v-if="(seccionActiva === 'usuarios' || seccionActiva === 'comercios') && !store.loading" class="panel">
       <div class="panel__header">
-        <h3 class="panel__title">Usuarios ({{ store.usuarios.length }})</h3>
+        <h3 class="panel__title">{{ seccionActiva === 'comercios' ? 'Comercios' : 'Usuarios' }} ({{ usuariosFiltrados.length }})</h3>
       </div>
       <div class="panel__body">
-        <div v-if="!store.usuarios.length" class="empty-state">No hay usuarios.</div>
+        <div v-if="!usuariosFiltrados.length" class="empty-state">No hay {{ seccionActiva === 'comercios' ? 'comercios' : 'usuarios' }}.</div>
         <div v-else class="table-container">
           <table class="data-table">
             <thead>
@@ -78,6 +78,7 @@
                 <th>Email</th>
                 <th>Nombre</th>
                 <th>Horas</th>
+                <th>Saldo</th>
                 <th>Estrellas</th>
                 <th>Tipo</th>
                 <th>Estado</th>
@@ -87,12 +88,13 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="u in store.usuarios" :key="u.id">
+              <tr v-for="u in usuariosFiltrados" :key="u.id">
                 <td>{{ u.id }}</td>
                 <td>{{ u.username }}</td>
                 <td>{{ u.email }}</td>
                 <td>{{ u.nombre_real }}</td>
                 <td>{{ Number(u.horas_de_vida || 0).toFixed(1) }}</td>
+                <td>{{ u.saldo_comercial ? Number(u.saldo_comercial).toFixed(2) : '0.00' }}</td>
                 <td>{{ u.promedio_estrellas ? Number(u.promedio_estrellas).toFixed(1) + '★' : '—' }}</td>
                 <td>
                   <span class="badge" :class="u.es_comercio ? 'badge--necesidad' : 'badge--talento'">
@@ -647,6 +649,10 @@
               <input v-model="modalEditarUsuario.horas_de_vida" class="input" type="number" step="0.1" />
             </div>
             <div class="form-group">
+              <label>Saldo comercial</label>
+              <input v-model="modalEditarUsuario.saldo_comercial" class="input" type="number" step="0.1" />
+            </div>
+            <div class="form-group">
               <label>Tipo</label>
               <select v-model="modalEditarUsuario.es_comercio" class="select">
                 <option :value="false">Usuario</option>
@@ -745,7 +751,7 @@ const formPublicacion = reactive({
 
 const modalEliminar = reactive({ visible: false, tipo: '', id: null, nombre: '' })
 const modalEditarUsuario = reactive({
-  visible: false, id: null, username: '', nombre_real: '', email: '', horas_de_vida: 0, es_comercio: false,
+  visible: false, id: null, username: '', nombre_real: '', email: '', horas_de_vida: 0, saldo_comercial: 0, es_comercio: false,
 })
 const modalEditarPub = reactive({
   visible: false, id: null, titulo: '', descripcion: '', categoria: '', tipo: 'TALENTO', urgencia: 'NORMAL',
@@ -773,10 +779,18 @@ const solicitudesReceptor = computed(() => {
   return solicitudesAprobadas.value.filter((s) => s.solicitante === formImpacto.usuarioId)
 })
 
+const usuariosFiltrados = computed(() => {
+  if (seccionActiva.value === 'comercios') {
+    return store.usuarios.filter(u => u.es_comercio)
+  }
+  return store.usuarios.filter(u => !u.es_comercio)
+})
+
 watch(() => formImpacto.usuarioId, () => { formImpacto.solicitudId = null })
 
 const tabs = [
   { key: 'usuarios', label: 'Usuarios' },
+  { key: 'comercios', label: 'Comercios' },
   { key: 'publicaciones', label: 'Publicaciones' },
   { key: 'trueques', label: 'Trueques' },
   { key: 'trueques-multiples', label: 'T. Multiples' },
@@ -798,6 +812,7 @@ const cargarSeccion = async (seccion, busqueda = '') => {
   }
   const acciones = {
     'usuarios': () => store.cargarUsuarios(busqueda),
+    'comercios': () => store.cargarUsuarios(busqueda),
     'publicaciones': () => store.cargarPublicaciones(busqueda),
     'trueques': () => store.cargarTrueques(busqueda),
     'trueques-multiples': () => store.cargarTruequesMultiples(busqueda),
@@ -861,7 +876,7 @@ const abrirEditarUsuario = (u) => {
   Object.assign(modalEditarUsuario, {
     visible: true, id: u.id, username: u.username,
     nombre_real: u.nombre_real || '', email: u.email || '',
-    horas_de_vida: u.horas_de_vida || 0, es_comercio: u.es_comercio || false,
+    horas_de_vida: u.horas_de_vida || 0, saldo_comercial: u.saldo_comercial || 0, es_comercio: u.es_comercio || false,
   })
 }
 
@@ -871,6 +886,7 @@ const guardarUsuario = async () => {
       nombre_real: modalEditarUsuario.nombre_real,
       email: modalEditarUsuario.email,
       horas_de_vida: Number(modalEditarUsuario.horas_de_vida),
+      saldo_comercial: Number(modalEditarUsuario.saldo_comercial),
       es_comercio: modalEditarUsuario.es_comercio,
     })
     modalEditarUsuario.visible = false

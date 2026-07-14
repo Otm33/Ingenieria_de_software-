@@ -3,10 +3,10 @@
     <header class="topbar">
       <div class="topbar__inner">
         <nav class="nav nav--main" aria-label="Navegacion principal">
-          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'cartelera'" title="Cartelera">
+          <button v-if="!authStore.usuarioActual?.es_comercio" class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'cartelera'" title="Cartelera">
             <span>Cartelera</span>
           </button>
-          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'publicar'" title="Publicar">
+          <button v-if="!authStore.usuarioActual?.es_comercio" class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'publicar'" title="Publicar">
             <span>Publicar</span>
           </button>
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'comunidad'" title="Comunidad">
@@ -15,7 +15,7 @@
           <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'red-comercial'" title="Red Comercial">
             <span>Red Comercial</span>
           </button>
-          <button class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'impacto-social'" title="Impacto Social">
+          <button v-if="!authStore.usuarioActual?.es_comercio" class="nav__link nav__link--icon" type="button" @click="seccionActiva = 'impacto-social'" title="Impacto Social">
             <span>Impacto Social</span>
           </button>
         </nav>
